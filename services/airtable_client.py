@@ -127,6 +127,7 @@ def log_event(event_type: str, description: str, details: str = ""):
         description (str): Human-readable description of what happened.
         details (str): Additional technical details or JSON dump.
     """
+    # Field name changed from "Event Type" to "Event" to match Airtable schema
     audit_table.create({
         "Event": event_type,
         "Description": description,
