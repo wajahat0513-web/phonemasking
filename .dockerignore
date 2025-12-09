@@ -37,6 +37,10 @@ htmlcov/
 # Project specific
 extras/
 *.plan.md
+docker-compose.yml
+docker-test.*
+DOCKER_TEST.md
+start.sh.bak
 
 # OS
 .DS_Store
