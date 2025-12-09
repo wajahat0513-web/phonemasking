@@ -149,11 +149,22 @@ def get_available_numbers():
         formula = "{Status} = 'Available'"
         numbers = inventory_table.all(formula=formula)
         
-        # If no results, try case-insensitive and alternative field names
+        # If no results, try case-insensitive
         if not numbers:
-            # Try lowercase
             formula = "LOWER({Status}) = 'available'"
             numbers = inventory_table.all(formula=formula)
+        
+        # If still no results, try common alternative status values
+        # Some users might use "Standby", "Unassigned", "Free", etc.
+        if not numbers:
+            alternative_statuses = ["Standby", "standby", "Unassigned", "unassigned", "Free", "free", "Ready", "ready"]
+            for alt_status in alternative_statuses:
+                formula = f"{{Status}} = '{alt_status}'"
+                numbers = inventory_table.all(formula=formula)
+                if numbers:
+                    from utils.logger import log_info
+                    log_info(f"Found numbers with Status='{alt_status}' (using as available)")
+                    break
         
         # Log diagnostic info if still no results
         if not numbers:
