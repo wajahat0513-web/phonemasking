@@ -139,30 +139,62 @@ def log_event(event_type: str, description: str, details: str = ""):
 def get_available_numbers():
     """
     Retrieves all phone numbers from inventory that are marked as 'Available'.
+    Tries multiple variations of the Status field and value to handle different naming conventions.
     
     Returns:
         list: A list of Airtable records for available numbers.
     """
     try:
+        # Try exact match first
         formula = "{Status} = 'Available'"
         numbers = inventory_table.all(formula=formula)
-        # Log for debugging
+        
+        # If no results, try case-insensitive and alternative field names
         if not numbers:
-            # Try to get all records to see what we have
-            all_records = inventory_table.all(max_records=10)
+            # Try lowercase
+            formula = "LOWER({Status}) = 'available'"
+            numbers = inventory_table.all(formula=formula)
+        
+        # Log diagnostic info if still no results
+        if not numbers:
+            # Get all records to diagnose
+            all_records = inventory_table.all(max_records=50)
             from utils.logger import log_error
-            log_error(f"No available numbers found. Total records checked: {len(all_records)}")
-            if all_records:
-                # Log first record's fields for debugging
-                sample_fields = list(all_records[0].get("fields", {}).keys())
-                log_error(f"Sample record fields: {sample_fields}")
-                # Check Status values
-                status_values = [r.get("fields", {}).get("Status", "N/A") for r in all_records]
-                log_error(f"Status values found: {set(status_values)}")
+            
+            if not all_records:
+                log_error("Number Inventory table is empty - no records found")
+                return []
+            
+            # Analyze what we have
+            sample_fields = list(all_records[0].get("fields", {}).keys())
+            status_values = []
+            status_field_name = None
+            
+            # Try to find Status field (case-insensitive)
+            for field_name in sample_fields:
+                if field_name.lower() == "status":
+                    status_field_name = field_name
+                    status_values = [r.get("fields", {}).get(field_name, "N/A") for r in all_records]
+                    break
+            
+            if not status_field_name:
+                log_error(f"Status field not found. Available fields: {sample_fields}")
+            else:
+                unique_statuses = set(status_values)
+                log_error(f"Status field found: '{status_field_name}'. Values in table: {unique_statuses}")
+                log_error(f"Total records: {len(all_records)}, Available count: {status_values.count('Available')}")
+                
+                # If we found records but none are "Available", suggest what to check
+                if "Available" not in unique_statuses and "available" not in [s.lower() if s else "" for s in unique_statuses]:
+                    log_error(f"⚠️ No records with Status='Available'. Current statuses: {unique_statuses}")
+                    log_error(f"💡 Tip: Update records to have Status='Available' to make them assignable")
+        
         return numbers
     except Exception as e:
         from utils.logger import log_error
         log_error(f"Error fetching available numbers: {str(e)}")
+        import traceback
+        log_error(f"Traceback: {traceback.format_exc()}")
         raise
 
 def find_number_assigned_to_sitter(sitter_id: str):

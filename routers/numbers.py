@@ -65,7 +65,21 @@ async def attach_number(
     # Fetch an 'Available' number from the Number Inventory table.
     new_number_record = get_next_available_number()
     if not new_number_record:
-        raise HTTPException(status_code=500, detail="No available numbers in pool")
+        # Get diagnostic info to help user
+        try:
+            from services.airtable_client import inventory_table
+            all_records = inventory_table.all(max_records=10)
+            if not all_records:
+                detail = "Number Inventory table is empty. Please add phone numbers to the 'Number Inventory' table in Airtable."
+            else:
+                # Check what statuses exist
+                status_values = [r.get("fields", {}).get("Status", "N/A") for r in all_records]
+                unique_statuses = set(status_values)
+                detail = f"No numbers with Status='Available' found. Current statuses in table: {unique_statuses}. Please update records to have Status='Available'."
+        except Exception:
+            detail = "No available numbers in pool. Please check the Number Inventory table in Airtable and ensure records have Status='Available'."
+        
+        raise HTTPException(status_code=500, detail=detail)
     
     # Try both field name variations: "PhoneNumber" and "Phone Number"
     new_number = new_number_record["fields"].get("PhoneNumber") or new_number_record["fields"].get("Phone Number")
