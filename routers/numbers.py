@@ -14,7 +14,7 @@ Endpoints:
 """
 
 from fastapi import APIRouter, HTTPException, Body, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from services.number_pool import get_next_available_number, assign_number_to_sitter, move_old_number_to_standby
 from services.twilio_proxy import update_proxy_number
@@ -25,6 +25,16 @@ router = APIRouter()
 
 class AttachNumberRequest(BaseModel):
     sitter_id: str
+    
+    @field_validator('sitter_id')
+    @classmethod
+    def trim_sitter_id(cls, v: str) -> str:
+        """Trim whitespace from sitter_id to prevent invalid record ID errors."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                raise ValueError("sitter_id cannot be empty")
+        return v
 
 @router.post("/attach-number")
 async def attach_number(
@@ -57,6 +67,13 @@ async def attach_number(
         pass  # Already set from query parameter
     else:
         raise HTTPException(status_code=422, detail="sitter_id is required in request body or query parameter")
+    
+    # Trim whitespace from sitter_id to prevent invalid record ID errors
+    sitter_id = sitter_id.strip() if sitter_id else sitter_id
+    
+    if not sitter_id:
+        raise HTTPException(status_code=422, detail="sitter_id cannot be empty")
+    
     log_info(f"Attaching new number for sitter {sitter_id}")
 
     # ---------------------------------------------------------

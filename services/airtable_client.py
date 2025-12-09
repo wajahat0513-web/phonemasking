@@ -148,11 +148,15 @@ def get_available_numbers():
         # Try exact match first
         formula = "{Status} = 'Available'"
         numbers = inventory_table.all(formula=formula)
+        # Filter out any records that don't actually have Status field (safety check)
+        numbers = [n for n in numbers if "Status" in n.get("fields", {})]
         
         # If no results, try case-insensitive
         if not numbers:
             formula = "LOWER({Status}) = 'available'"
             numbers = inventory_table.all(formula=formula)
+            # Filter out any records that don't actually have Status field
+            numbers = [n for n in numbers if "Status" in n.get("fields", {})]
         
         # If still no results, try common alternative status values
         # Some users might use "Standby", "Unassigned", "Free", etc.
@@ -162,9 +166,12 @@ def get_available_numbers():
                 formula = f"{{Status}} = '{alt_status}'"
                 numbers = inventory_table.all(formula=formula)
                 if numbers:
-                    from utils.logger import log_info
-                    log_info(f"Found numbers with Status='{alt_status}' (using as available)")
-                    break
+                    # Filter out records that don't have Status field (shouldn't happen, but safety check)
+                    numbers = [n for n in numbers if "Status" in n.get("fields", {})]
+                    if numbers:
+                        from utils.logger import log_info
+                        log_info(f"Found {len(numbers)} number(s) with Status='{alt_status}' (using as available)")
+                        break
         
         # Log diagnostic info if still no results
         if not numbers:
@@ -176,29 +183,53 @@ def get_available_numbers():
                 log_error("Number Inventory table is empty - no records found")
                 return []
             
-            # Analyze what we have
-            sample_fields = list(all_records[0].get("fields", {}).keys())
-            status_values = []
+            # Analyze what we have - check multiple records to find Status field
             status_field_name = None
+            status_values = []
+            all_field_names = set()
             
-            # Try to find Status field (case-insensitive)
-            for field_name in sample_fields:
+            # Collect all field names from all records
+            for record in all_records:
+                fields = record.get("fields", {})
+                all_field_names.update(fields.keys())
+            
+            # Try to find Status field (case-insensitive) from all field names
+            for field_name in all_field_names:
                 if field_name.lower() == "status":
                     status_field_name = field_name
-                    status_values = [r.get("fields", {}).get(field_name, "N/A") for r in all_records]
+                    # Get status values from all records that have this field
+                    status_values = [r.get("fields", {}).get(field_name) for r in all_records if field_name in r.get("fields", {})]
+                    status_values = [s for s in status_values if s is not None]  # Filter out None values
                     break
             
             if not status_field_name:
-                log_error(f"Status field not found. Available fields: {sample_fields}")
+                # Check if any records have Status field at all
+                records_with_status = [r for r in all_records if any(k.lower() == "status" for k in r.get("fields", {}).keys())]
+                if records_with_status:
+                    # Some records have Status, some don't
+                    log_error(f"Status field exists but not all records have it. Records with Status: {len(records_with_status)}/{len(all_records)}")
+                    # Get status values from records that have it
+                    for record in records_with_status:
+                        for field_name in record.get("fields", {}).keys():
+                            if field_name.lower() == "status":
+                                status_values.append(record.get("fields", {}).get(field_name))
+                                break
+                    unique_statuses = set(status_values)
+                    log_error(f"Status values found: {unique_statuses}")
+                else:
+                    log_error(f"Status field not found in any records. Available fields across all records: {sorted(all_field_names)}")
             else:
                 unique_statuses = set(status_values)
                 log_error(f"Status field found: '{status_field_name}'. Values in table: {unique_statuses}")
-                log_error(f"Total records: {len(all_records)}, Available count: {status_values.count('Available')}")
+                log_error(f"Total records: {len(all_records)}, Records with Status field: {len(status_values)}")
                 
                 # If we found records but none are "Available", suggest what to check
-                if "Available" not in unique_statuses and "available" not in [s.lower() if s else "" for s in unique_statuses]:
-                    log_error(f"⚠️ No records with Status='Available'. Current statuses: {unique_statuses}")
-                    log_error(f"💡 Tip: Update records to have Status='Available' to make them assignable")
+                available_variants = ["Available", "available", "Ready", "ready", "Standby", "standby"]
+                has_available = any(variant in unique_statuses for variant in available_variants)
+                
+                if not has_available:
+                    log_error(f"⚠️ No records with Status='Available' (or Ready/Standby). Current statuses: {unique_statuses}")
+                    log_error(f"💡 Tip: Update at least one record to have Status='Available' or 'Ready' to make it assignable")
         
         return numbers
     except Exception as e:
@@ -218,6 +249,12 @@ def find_number_assigned_to_sitter(sitter_id: str):
     Returns:
         dict: The inventory record, or None if not found.
     """
+    # Trim whitespace from sitter_id to prevent invalid record ID errors
+    sitter_id = sitter_id.strip() if sitter_id else sitter_id
+    
+    if not sitter_id:
+        return None
+    
     formula = f"FIND('{sitter_id}', {{Assigned Sitter}})"
     records = inventory_table.all(formula=formula)
     return records[0] if records else None
@@ -230,6 +267,12 @@ def reserve_number(record_id: str, sitter_id: str):
         record_id (str): The Inventory Record ID.
         sitter_id (str): The Sitter's Record ID to link.
     """
+    # Trim whitespace from sitter_id to prevent invalid record ID errors
+    sitter_id = sitter_id.strip() if sitter_id else sitter_id
+    
+    if not sitter_id:
+        raise ValueError("sitter_id cannot be empty")
+    
     inventory_table.update(record_id, {
         "Status": "Assigned",
         "Assigned Sitter": [sitter_id]
