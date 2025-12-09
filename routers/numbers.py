@@ -13,7 +13,9 @@ Endpoints:
 - POST /attach-number: Manually triggers a number rotation for a specific Sitter.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Body, Query
+from pydantic import BaseModel
+from typing import Optional
 from services.number_pool import get_next_available_number, assign_number_to_sitter, move_old_number_to_standby
 from services.twilio_proxy import update_proxy_number
 from services.airtable_client import find_sitter_by_twilio_number, find_number_assigned_to_sitter, log_event
@@ -21,8 +23,14 @@ from utils.logger import log_info, log_error
 
 router = APIRouter()
 
+class AttachNumberRequest(BaseModel):
+    sitter_id: str
+
 @router.post("/attach-number")
-async def attach_number(sitter_id: str):
+async def attach_number(
+    request: Optional[AttachNumberRequest] = Body(None),
+    sitter_id: Optional[str] = Query(None)
+):
     """
     Assigns a new phone number to a Sitter and releases their old one.
     
@@ -31,12 +39,24 @@ async def attach_number(sitter_id: str):
     - Periodic number rotation for privacy/security.
     - Replacing a compromised or spam-flagged number.
     
+    Accepts sitter_id either:
+    - In JSON body: {"sitter_id": "rec123"}
+    - As query parameter: ?sitter_id=rec123
+    
     Args:
-        sitter_id (str): The Airtable Record ID of the Sitter.
+        request (Optional[AttachNumberRequest]): Request body containing sitter_id (for JSON requests).
+        sitter_id (Optional[str]): Query parameter sitter_id (for query string requests).
         
     Returns:
         dict: Success status and the newly assigned phone number.
     """
+    # Support both JSON body and query parameter
+    if request and request.sitter_id:
+        sitter_id = request.sitter_id
+    elif sitter_id:
+        pass  # Already set from query parameter
+    else:
+        raise HTTPException(status_code=422, detail="sitter_id is required in request body or query parameter")
     log_info(f"Attaching new number for sitter {sitter_id}")
 
     # ---------------------------------------------------------
