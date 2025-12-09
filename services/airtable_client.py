@@ -127,7 +127,8 @@ def log_event(event_type: str, description: str, details: str = ""):
         description (str): Human-readable description of what happened.
         details (str): Additional technical details or JSON dump.
     """
-    # Field name changed from "Event Type" to "Event" to match Airtable schema
+    # Field name in Airtable API is "Event" (UI shows "A Event" but API uses "Event")
+    # The error suggests Railway may have old code using "Event Type" - this is the correct field name
     audit_table.create({
         "Event": event_type,
         "Description": description,
