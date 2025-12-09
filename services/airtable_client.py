@@ -128,7 +128,7 @@ def log_event(event_type: str, description: str, details: str = ""):
         details (str): Additional technical details or JSON dump.
     """
     audit_table.create({
-        "Event Type": event_type,
+        "Event": event_type,
         "Description": description,
         "Details": details,
         "Timestamp": datetime.utcnow().isoformat()
