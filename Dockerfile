@@ -21,12 +21,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Make startup script executable
-RUN chmod +x start.sh
+RUN chmod +x start.py
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
 
-# Run the application using the startup script
-# The script handles PORT env var properly
-CMD ./start.sh
+# Run the application using Python startup script
+# Python script reads PORT env var directly, more reliable than shell script
+CMD ["python", "start.py"]
 
