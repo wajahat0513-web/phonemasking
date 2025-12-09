@@ -138,103 +138,38 @@ def log_event(event_type: str, description: str, details: str = ""):
 
 def get_available_numbers():
     """
-    Retrieves all phone numbers from inventory that are marked as 'Available'.
-    Tries multiple variations of the Status field and value to handle different naming conventions.
+    Retrieves all unassigned phone numbers from inventory.
+    Status field checking removed - now only checks if number is assigned to a sitter.
     
     Returns:
-        list: A list of Airtable records for available numbers.
+        list: A list of Airtable records for unassigned numbers in inventory.
     """
     try:
-        # Try exact match first
-        formula = "{Status} = 'Available'"
-        numbers = inventory_table.all(formula=formula)
-        # Filter out any records that don't actually have Status field (safety check)
-        numbers = [n for n in numbers if "Status" in n.get("fields", {})]
+        # Get all records from inventory (no Status filter)
+        all_numbers = inventory_table.all()
         
-        # If no results, try case-insensitive
-        if not numbers:
-            formula = "LOWER({Status}) = 'available'"
-            numbers = inventory_table.all(formula=formula)
-            # Filter out any records that don't actually have Status field
-            numbers = [n for n in numbers if "Status" in n.get("fields", {})]
+        # Filter to only unassigned numbers (no Assigned Sitter)
+        # and ensure they have a phone number field
+        numbers = []
+        for record in all_numbers:
+            fields = record.get("fields", {})
+            phone = fields.get("PhoneNumber") or fields.get("Phone Number")
+            assigned_sitter = fields.get("Assigned Sitter", [])
+            
+            # Only include records that have a phone number AND are not assigned
+            if phone and not assigned_sitter:
+                numbers.append(record)
         
-        # If still no results, try common alternative status values
-        # Some users might use "Standby", "Unassigned", "Free", etc.
-        if not numbers:
-            alternative_statuses = ["Standby", "standby", "Unassigned", "unassigned", "Free", "free", "Ready", "ready"]
-            for alt_status in alternative_statuses:
-                formula = f"{{Status}} = '{alt_status}'"
-                numbers = inventory_table.all(formula=formula)
-                if numbers:
-                    # Filter out records that don't have Status field (shouldn't happen, but safety check)
-                    numbers = [n for n in numbers if "Status" in n.get("fields", {})]
-                    if numbers:
-                        from utils.logger import log_info
-                        log_info(f"Found {len(numbers)} number(s) with Status='{alt_status}' (using as available)")
-                        break
-        
-        # Log diagnostic info if still no results
-        if not numbers:
-            # Get all records to diagnose
-            all_records = inventory_table.all(max_records=50)
-            from utils.logger import log_error
-            
-            if not all_records:
-                log_error("Number Inventory table is empty - no records found")
-                return []
-            
-            # Analyze what we have - check multiple records to find Status field
-            status_field_name = None
-            status_values = []
-            all_field_names = set()
-            
-            # Collect all field names from all records
-            for record in all_records:
-                fields = record.get("fields", {})
-                all_field_names.update(fields.keys())
-            
-            # Try to find Status field (case-insensitive) from all field names
-            for field_name in all_field_names:
-                if field_name.lower() == "status":
-                    status_field_name = field_name
-                    # Get status values from all records that have this field
-                    status_values = [r.get("fields", {}).get(field_name) for r in all_records if field_name in r.get("fields", {})]
-                    status_values = [s for s in status_values if s is not None]  # Filter out None values
-                    break
-            
-            if not status_field_name:
-                # Check if any records have Status field at all
-                records_with_status = [r for r in all_records if any(k.lower() == "status" for k in r.get("fields", {}).keys())]
-                if records_with_status:
-                    # Some records have Status, some don't
-                    log_error(f"Status field exists but not all records have it. Records with Status: {len(records_with_status)}/{len(all_records)}")
-                    # Get status values from records that have it
-                    for record in records_with_status:
-                        for field_name in record.get("fields", {}).keys():
-                            if field_name.lower() == "status":
-                                status_values.append(record.get("fields", {}).get(field_name))
-                                break
-                    unique_statuses = set(status_values)
-                    log_error(f"Status values found: {unique_statuses}")
-                else:
-                    log_error(f"Status field not found in any records. Available fields across all records: {sorted(all_field_names)}")
-            else:
-                unique_statuses = set(status_values)
-                log_error(f"Status field found: '{status_field_name}'. Values in table: {unique_statuses}")
-                log_error(f"Total records: {len(all_records)}, Records with Status field: {len(status_values)}")
-                
-                # If we found records but none are "Available", suggest what to check
-                available_variants = ["Available", "available", "Ready", "ready", "Standby", "standby"]
-                has_available = any(variant in unique_statuses for variant in available_variants)
-                
-                if not has_available:
-                    log_error(f"⚠️ No records with Status='Available' (or Ready/Standby). Current statuses: {unique_statuses}")
-                    log_error(f"💡 Tip: Update at least one record to have Status='Available' or 'Ready' to make it assignable")
+        from utils.logger import log_info
+        if numbers:
+            log_info(f"Found {len(numbers)} unassigned number(s) in inventory")
+        else:
+            log_info("No unassigned numbers found in inventory table")
         
         return numbers
     except Exception as e:
         from utils.logger import log_error
-        log_error(f"Error fetching available numbers: {str(e)}")
+        log_error(f"Error fetching numbers from inventory: {str(e)}")
         import traceback
         log_error(f"Traceback: {traceback.format_exc()}")
         raise
@@ -261,7 +196,8 @@ def find_number_assigned_to_sitter(sitter_id: str):
 
 def reserve_number(record_id: str, sitter_id: str):
     """
-    Updates a number inventory record to mark it as 'Assigned' to a Sitter.
+    Updates a number inventory record to link it to a Sitter.
+    Status field update removed - only updates Assigned Sitter field.
     
     Args:
         record_id (str): The Inventory Record ID.
@@ -273,20 +209,21 @@ def reserve_number(record_id: str, sitter_id: str):
     if not sitter_id:
         raise ValueError("sitter_id cannot be empty")
     
+    # Only update Assigned Sitter field, don't touch Status
     inventory_table.update(record_id, {
-        "Status": "Assigned",
         "Assigned Sitter": [sitter_id]
     })
 
 def release_number(record_id: str):
     """
-    Updates a number inventory record to mark it as 'Standby' (released).
+    Releases a number from a Sitter by clearing the Assigned Sitter field.
+    Status field update removed - only clears Assigned Sitter.
     
     Args:
         record_id (str): The Inventory Record ID.
     """
+    # Only clear Assigned Sitter field, don't touch Status
     inventory_table.update(record_id, {
-        "Status": "Standby",
         "Assigned Sitter": []
     })
 

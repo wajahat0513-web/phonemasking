@@ -89,12 +89,16 @@ async def attach_number(
             if not all_records:
                 detail = "Number Inventory table is empty. Please add phone numbers to the 'Number Inventory' table in Airtable."
             else:
-                # Check what statuses exist
-                status_values = [r.get("fields", {}).get("Status", "N/A") for r in all_records]
-                unique_statuses = set(status_values)
-                detail = f"No numbers with Status='Available' found. Current statuses in table: {unique_statuses}. Please update records to have Status='Available'."
-        except Exception:
-            detail = "No available numbers in pool. Please check the Number Inventory table in Airtable and ensure records have Status='Available'."
+                # Check if records have phone numbers
+                records_with_phone = [r for r in all_records if r.get("fields", {}).get("PhoneNumber") or r.get("fields", {}).get("Phone Number")]
+                if not records_with_phone:
+                    detail = "Number Inventory table has records but none have a phone number field. Please ensure records have 'PhoneNumber' or 'Phone Number' field populated."
+                else:
+                    # Check which records are already assigned
+                    assigned_count = sum(1 for r in records_with_phone if r.get("fields", {}).get("Assigned Sitter"))
+                    detail = f"Found {len(records_with_phone)} record(s) with phone numbers, but {assigned_count} are already assigned. No unassigned numbers available."
+        except Exception as e:
+            detail = f"No available numbers in pool. Error: {str(e)}"
         
         raise HTTPException(status_code=500, detail=detail)
     
