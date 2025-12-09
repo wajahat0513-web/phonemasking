@@ -1,7 +1,6 @@
-#!/bin/bash
-# Startup script for Railway deployment
-# Reads PORT from environment variable, defaults to 8080 if not set
+#!/bin/sh
+# Wrapper script for Railway that properly handles PORT environment variable
+# This script ensures PORT is always an integer before passing to uvicorn
 
 PORT=${PORT:-8080}
-exec uvicorn main:app --host 0.0.0.0 --port "$PORT"
-
+exec python start.py

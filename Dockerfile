@@ -20,13 +20,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy only necessary application files (excludes files in .dockerignore)
 COPY . .
 
-# Make startup script executable
-RUN chmod +x start.py
+# Make startup scripts executable
+RUN chmod +x start.py start.sh
 
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
 
-# Run the application using Python startup script
-# Python script reads PORT env var directly, more reliable than shell script
+# Use CMD with shell form to allow Railway overrides, but default to our Python script
+# Railway can override this, but if they use uvicorn directly, main.py will handle PORT
 CMD ["python", "start.py"]
 
