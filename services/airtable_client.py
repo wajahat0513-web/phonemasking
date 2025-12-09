@@ -143,8 +143,27 @@ def get_available_numbers():
     Returns:
         list: A list of Airtable records for available numbers.
     """
-    formula = "{Status} = 'Available'"
-    return inventory_table.all(formula=formula)
+    try:
+        formula = "{Status} = 'Available'"
+        numbers = inventory_table.all(formula=formula)
+        # Log for debugging
+        if not numbers:
+            # Try to get all records to see what we have
+            all_records = inventory_table.all(max_records=10)
+            from utils.logger import log_error
+            log_error(f"No available numbers found. Total records checked: {len(all_records)}")
+            if all_records:
+                # Log first record's fields for debugging
+                sample_fields = list(all_records[0].get("fields", {}).keys())
+                log_error(f"Sample record fields: {sample_fields}")
+                # Check Status values
+                status_values = [r.get("fields", {}).get("Status", "N/A") for r in all_records]
+                log_error(f"Status values found: {set(status_values)}")
+        return numbers
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error fetching available numbers: {str(e)}")
+        raise
 
 def find_number_assigned_to_sitter(sitter_id: str):
     """

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from typing import Optional
 from services.number_pool import get_next_available_number, assign_number_to_sitter, move_old_number_to_standby
 from services.twilio_proxy import update_proxy_number
-from services.airtable_client import find_sitter_by_twilio_number, find_number_assigned_to_sitter, log_event
+from services.airtable_client import find_sitter_by_twilio_number, find_number_assigned_to_sitter, log_event, inventory_table
 from utils.logger import log_info, log_error
 
 router = APIRouter()
@@ -67,7 +67,13 @@ async def attach_number(
     if not new_number_record:
         raise HTTPException(status_code=500, detail="No available numbers in pool")
     
-    new_number = new_number_record["fields"].get("PhoneNumber")
+    # Try both field name variations: "PhoneNumber" and "Phone Number"
+    new_number = new_number_record["fields"].get("PhoneNumber") or new_number_record["fields"].get("Phone Number")
+    if not new_number:
+        # Log available fields for debugging
+        available_fields = list(new_number_record["fields"].keys())
+        log_error(f"Phone number field not found. Available fields: {available_fields}")
+        raise HTTPException(status_code=500, detail=f"Phone number field not found in record. Available fields: {available_fields}")
     new_number_id = new_number_record["id"]
 
     # ---------------------------------------------------------
@@ -100,3 +106,52 @@ async def attach_number(
     log_event("NUMBER_ROTATION", f"Assigned {new_number} to sitter {sitter_id}")
     
     return {"status": "success", "new_number": new_number}
+
+@router.get("/numbers/debug")
+async def debug_numbers():
+    """
+    Diagnostic endpoint to check Number Inventory table status.
+    Helps identify field name issues and available numbers.
+    """
+    try:
+        # Get all records (limited to 20 for debugging)
+        all_records = inventory_table.all(max_records=20)
+        
+        # Get available numbers
+        from services.airtable_client import get_available_numbers
+        available = get_available_numbers()
+        
+        # Analyze records
+        records_info = []
+        status_counts = {}
+        field_names = set()
+        
+        for record in all_records:
+            fields = record.get("fields", {})
+            field_names.update(fields.keys())
+            
+            # Count status values
+            status = fields.get("Status", "N/A")
+            status_counts[status] = status_counts.get(status, 0) + 1
+            
+            # Get phone number (try both variations)
+            phone = fields.get("PhoneNumber") or fields.get("Phone Number", "N/A")
+            
+            records_info.append({
+                "id": record.get("id"),
+                "phone": phone,
+                "status": status,
+                "assigned_sitter": fields.get("Assigned Sitter", [])
+            })
+        
+        return {
+            "total_records": len(all_records),
+            "available_count": len(available),
+            "status_breakdown": status_counts,
+            "field_names_found": sorted(list(field_names)),
+            "sample_records": records_info[:5],
+            "expected_fields": ["PhoneNumber", "Phone Number", "Status", "Assigned Sitter"]
+        }
+    except Exception as e:
+        log_error(f"Debug endpoint error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Debug error: {str(e)}")
