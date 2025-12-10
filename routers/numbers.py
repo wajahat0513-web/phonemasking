@@ -70,6 +70,12 @@ async def attach_number(
         optional_fields=["sitter_id", "sitterId", "sitterID", "sitter", "id", "record_id", "recordId"],
     )
 
+    # Normalize payload keys (strip spaces/underscores and lowercase) for Zapier quirks like "Sitter ID"
+    normalized_payload = {}
+    for key, value in payload.items():
+        norm_key = key.replace(" ", "").replace("_", "").lower()
+        normalized_payload[norm_key] = value
+
     candidate_ids = [
         sitter_id,  # query string value if provided
         body.sitter_id if body else None,  # JSON body via Pydantic model
@@ -80,6 +86,7 @@ async def attach_number(
         payload.get("id"),
         payload.get("record_id"),
         payload.get("recordId"),
+        normalized_payload.get("sitterid"),
     ]
 
     sitter_id = next((sid for sid in candidate_ids if sid), None)
