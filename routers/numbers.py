@@ -40,7 +40,7 @@ class AttachNumberRequest(BaseModel):
 @router.post("/attach-number")
 async def attach_number(
     request: Request,
-    body: Optional[AttachNumberRequest] = Body(None),
+    body: Optional[dict] = Body(None),
     sitter_id: Optional[str] = Query(None)
 ):
     """
@@ -78,7 +78,7 @@ async def attach_number(
 
     candidate_ids = [
         sitter_id,  # query string value if provided
-        body.sitter_id if body else None,  # JSON body via Pydantic model
+        body.get("sitter_id") if isinstance(body, dict) else None,  # JSON body as dict
         payload.get("sitter_id"),
         payload.get("sitterId"),
         payload.get("sitterID"),
