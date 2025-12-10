@@ -63,19 +63,36 @@ async def attach_number(
         dict: Success status and the newly assigned phone number.
     """
     # Support JSON, form, or query param for sitter_id (Zapier + Twilio compatibility)
-    if body and body.sitter_id:
-        sitter_id = body.sitter_id
-    else:
-        payload = await parse_incoming_payload(
-            request, required_fields=["sitter_id"], optional_fields=[]
-        )
-        sitter_id = payload.get("sitter_id")
+    # Accept common aliases to avoid "Field required" errors from slightly different casing.
+    payload = await parse_incoming_payload(
+        request,
+        required_fields=[],
+        optional_fields=["sitter_id", "sitterId", "sitterID", "sitter", "id", "record_id", "recordId"],
+    )
+
+    candidate_ids = [
+        sitter_id,  # query string value if provided
+        body.sitter_id if body else None,  # JSON body via Pydantic model
+        payload.get("sitter_id"),
+        payload.get("sitterId"),
+        payload.get("sitterID"),
+        payload.get("sitter"),
+        payload.get("id"),
+        payload.get("record_id"),
+        payload.get("recordId"),
+    ]
+
+    sitter_id = next((sid for sid in candidate_ids if sid), None)
 
     # Trim whitespace from sitter_id to prevent invalid record ID errors
     sitter_id = sitter_id.strip() if sitter_id else sitter_id
 
     if not sitter_id:
-        raise HTTPException(status_code=422, detail="sitter_id is required in request body, form data, or query parameter")
+        provided_keys = ", ".join(sorted(payload.keys())) if payload else "none"
+        raise HTTPException(
+            status_code=422,
+            detail=f"sitter_id is required. Accepted keys: sitter_id, sitterId, sitterID, sitter, id, record_id. Provided keys: {provided_keys}",
+        )
     
     log_info(f"Attaching new number for sitter {sitter_id}")
 
