@@ -13,21 +13,16 @@ Endpoints:
 - POST /intercept: The webhook endpoint for active session messages.
 """
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Request
 from services.airtable_client import save_message, find_client_by_phone, log_event
 from services.ttl_manager import is_ttl_expired, handle_ttl_expiry, update_last_active
 from utils.logger import log_info
+from utils.request_parser import parse_incoming_payload
 
 router = APIRouter()
 
 @router.post("/intercept")
-async def intercept(
-    request: Request,
-    From: str = Form(...),
-    To: str = Form(...),
-    Body: str = Form(...),
-    AccountSid: str = Form(...)
-):
+async def intercept(request: Request):
     """
     Callback endpoint triggered for every message inside an existing session.
     
@@ -44,14 +39,23 @@ async def intercept(
     Returns:
         dict: Empty dictionary to acknowledge receipt (200 OK).
     """
+    payload = await parse_incoming_payload(
+        request,
+        required_fields=["From", "To", "Body"],
+        optional_fields=["AccountSid", "SessionSid"],
+    )
+
+    From = payload["From"]
+    To = payload["To"]
+    Body = payload["Body"]
+    account_sid = payload.get("AccountSid")
+    session_sid = payload.get("SessionSid")
+
     # Normalize phone numbers to E.164 format (add + if missing)
-    if not From.startswith('+'):
+    if not From.startswith("+"):
         From = f"+{From}"
-    if not To.startswith('+'):
+    if not To.startswith("+"):
         To = f"+{To}"
-    
-    form_data = await request.form()
-    session_sid = form_data.get("SessionSid")
     
     log_info(f"Intercepted message from {From} to {To} in session {session_sid}")
 

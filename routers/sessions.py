@@ -14,24 +14,22 @@ Endpoints:
 - POST /out-of-session: The entry point for new conversations.
 """
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from services.airtable_client import (
-    find_sitter_by_twilio_number, 
-    find_client_by_phone, 
-    create_client, 
-    update_client_session, 
-    log_event
+    find_sitter_by_twilio_number,
+    find_client_by_phone,
+    create_client,
+    update_client_session,
+    log_event,
 )
 from services.twilio_proxy import create_session, add_participant
 from utils.logger import log_info, log_error, log_success
+from utils.request_parser import parse_incoming_payload
 
 router = APIRouter()
 
 @router.post("/out-of-session")
-async def out_of_session(
-    From: str = Form(...),
-    To: str = Form(...)
-):
+async def out_of_session(request: Request):
     """
     Handles the initial contact from a Client to a Sitter (Out of Session).
     
@@ -45,10 +43,17 @@ async def out_of_session(
     Returns:
         dict: Status and Session SID on success.
     """
+    payload = await parse_incoming_payload(
+        request, required_fields=["From", "To"], optional_fields=[]
+    )
+
+    From = payload["From"]
+    To = payload["To"]
+
     # Normalize phone numbers to E.164 format (add + if missing)
-    if not From.startswith('+'):
+    if not From.startswith("+"):
         From = f"+{From}"
-    if not To.startswith('+'):
+    if not To.startswith("+"):
         To = f"+{To}"
     
     log_info(f"Out of session message from {From} to {To}")
