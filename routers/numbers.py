@@ -149,8 +149,10 @@ async def attach_number(
     # ---------------------------------------------------------
     # Update the new number record in Airtable to 'Assigned' status
     # and link it to the Sitter.
-    if not assign_number_to_sitter(sitter_id, new_number_id):
-        raise HTTPException(status_code=500, detail="Failed to assign number")
+    try:
+        assign_number_to_sitter(sitter_id, new_number_id, raise_on_error=True)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to assign number: {str(e)}")
 
     # ---------------------------------------------------------
     # 4. Release Old Number (if any)

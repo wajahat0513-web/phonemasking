@@ -28,7 +28,7 @@ def get_next_available_number():
         return None
     return numbers[0]
 
-def assign_number_to_sitter(sitter_id: str, number_record_id: str):
+def assign_number_to_sitter(sitter_id: str, number_record_id: str, raise_on_error: bool = False):
     """
     Links a specific number from the inventory to a Sitter.
     
@@ -37,7 +37,7 @@ def assign_number_to_sitter(sitter_id: str, number_record_id: str):
         number_record_id (str): The Inventory Record ID of the number to assign.
         
     Returns:
-        bool: True if successful, False otherwise.
+        bool: True if successful, False otherwise (or raises if raise_on_error=True).
     """
     try:
         reserve_number(number_record_id, sitter_id)
@@ -45,6 +45,8 @@ def assign_number_to_sitter(sitter_id: str, number_record_id: str):
         return True
     except Exception as e:
         log_error(f"Failed to assign number {number_record_id} to sitter {sitter_id}", str(e))
+        if raise_on_error:
+            raise
         return False
 
 def move_old_number_to_standby(number_record_id: str):
