@@ -13,13 +13,14 @@ Endpoints:
 - POST /attach-number: Manually triggers a number rotation for a specific Sitter.
 """
 
-from fastapi import APIRouter, HTTPException, Body, Query
+from fastapi import APIRouter, HTTPException, Body, Query, Request
 from pydantic import BaseModel, field_validator
 from typing import Optional
 from services.number_pool import get_next_available_number, assign_number_to_sitter, move_old_number_to_standby
 from services.twilio_proxy import update_proxy_number
 from services.airtable_client import find_sitter_by_twilio_number, find_number_assigned_to_sitter, log_event, inventory_table
 from utils.logger import log_info, log_error
+from utils.request_parser import parse_incoming_payload
 
 router = APIRouter()
 
@@ -38,7 +39,8 @@ class AttachNumberRequest(BaseModel):
 
 @router.post("/attach-number")
 async def attach_number(
-    request: Optional[AttachNumberRequest] = Body(None),
+    request: Request,
+    body: Optional[AttachNumberRequest] = Body(None),
     sitter_id: Optional[str] = Query(None)
 ):
     """
@@ -60,19 +62,20 @@ async def attach_number(
     Returns:
         dict: Success status and the newly assigned phone number.
     """
-    # Support both JSON body and query parameter
-    if request and request.sitter_id:
-        sitter_id = request.sitter_id
-    elif sitter_id:
-        pass  # Already set from query parameter
+    # Support JSON, form, or query param for sitter_id (Zapier + Twilio compatibility)
+    if body and body.sitter_id:
+        sitter_id = body.sitter_id
     else:
-        raise HTTPException(status_code=422, detail="sitter_id is required in request body or query parameter")
-    
+        payload = await parse_incoming_payload(
+            request, required_fields=["sitter_id"], optional_fields=[]
+        )
+        sitter_id = payload.get("sitter_id")
+
     # Trim whitespace from sitter_id to prevent invalid record ID errors
     sitter_id = sitter_id.strip() if sitter_id else sitter_id
-    
+
     if not sitter_id:
-        raise HTTPException(status_code=422, detail="sitter_id cannot be empty")
+        raise HTTPException(status_code=422, detail="sitter_id is required in request body, form data, or query parameter")
     
     log_info(f"Attaching new number for sitter {sitter_id}")
 
