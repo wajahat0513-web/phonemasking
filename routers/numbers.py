@@ -283,6 +283,62 @@ async def purchase_number(request: PurchaseNumberRequest):
             "details": "Check Twilio account balance and number availability"
         }
 
+@router.post("/numbers/add-to-proxy")
+async def add_to_proxy(phone_number: str = Body(..., embed=True)):
+    """
+    Add an already-purchased number to Twilio Proxy Service.
+    
+    Used by Zap 3 for numbers that are already assigned to sitters.
+    Does NOT reassign the number, only adds it to Proxy.
+    
+    Args:
+        phone_number: E.164 formatted phone number (e.g., "+13035551234")
+        
+    Returns:
+        {
+            "success": true,
+            "proxy_phone_sid": "PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "phone_number": "+13035551234"
+        }
+    """
+    log_info(f"Adding number {phone_number} to Proxy Service")
+    
+    try:
+        # Add number to Twilio Proxy Service
+        from services.twilio_proxy import add_number_to_proxy_service
+        proxy_phone_sid = add_number_to_proxy_service(phone_number)
+        
+        # Find the number in inventory to update it
+        from services.airtable_client import inventory_table
+        formula = f"{{PhoneNumber}} = '{phone_number}'"
+        records = inventory_table.all(formula=formula)
+        
+        if records:
+            # Update inventory record with Proxy SID
+            inventory_table.update(records[0]["id"], {
+                "Proxy Phone SID": proxy_phone_sid,
+                "Attach Status": "Ready",
+                "Status": "Ready"
+            })
+            log_info(f"Updated inventory record for {phone_number}")
+        
+        log_info(f"Successfully added {phone_number} to Proxy (SID: {proxy_phone_sid})")
+        
+        return {
+            "success": True,
+            "proxy_phone_sid": proxy_phone_sid,
+            "phone_number": phone_number
+        }
+        
+    except Exception as e:
+        log_error(f"Failed to add number to Proxy: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "details": "Check that number exists in Twilio and is not already in Proxy"
+        }
+
+
 @router.get("/numbers/debug")
 async def debug_numbers():
     """
