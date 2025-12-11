@@ -81,4 +81,19 @@ async def intercept(request: Request):
     if session_sid:
         save_message(session_sid, From, To, Body)
 
-    return {}
+    # ---------------------------------------------------------
+    # 3. Prepend Client Name to Message
+    # ---------------------------------------------------------
+    # Look up client name and prepend to message for sitter clarity
+    client_name = "Unknown Client"
+    if client:
+        client_name = client["fields"].get("Name", "Unknown Client")
+    
+    # Prepend client name to message body
+    modified_body = f"[{client_name}]: {Body}"
+    
+    log_info(f"Prepending client name to message: {client_name}")
+    
+    # Return modified body to Twilio Proxy
+    # This instructs Proxy to send the modified message instead of original
+    return {"body": modified_body}

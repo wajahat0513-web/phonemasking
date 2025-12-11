@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 from services.airtable_client import (
     find_sitter_by_twilio_number,
     find_client_by_phone,
-    create_client,
+    create_or_update_client,
     update_client_session,
     log_event,
 )
@@ -76,10 +76,14 @@ async def out_of_session(request: Request):
     # ---------------------------------------------------------
     # Check if the sender (From) is already a known Client.
     # If not, create a new Client record in Airtable.
+    # Uses upsert logic to prevent duplicates if Zap 1 hasn't synced yet.
     client = find_client_by_phone(From)
     if not client:
-        client = create_client(From)
-        log_info(f"Created new client record for {From}")
+        client, was_created = create_or_update_client(From)
+        if was_created:
+            log_info(f"Created new shell client record for {From} (will be updated by Zap 1)")
+        else:
+            log_info(f"Found existing client record for {From}")
     
     client_id = client["id"]
 

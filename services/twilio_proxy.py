@@ -114,3 +114,82 @@ def update_proxy_number(session_sid: str, participant_sid: str, new_number: str)
 
 def log_message_to_twilio():
     pass
+
+def search_and_purchase_number(area_code: str, number_type: str = "local"):
+    """
+    Search for and purchase a phone number from Twilio.
+    
+    Args:
+        area_code (str): Area code to search (e.g., "303", "720")
+        number_type (str): Type of number ("local", "toll-free")
+        
+    Returns:
+        dict: {
+            "phone_number": "+13035551234",
+            "sid": "PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            "capabilities": {"sms": True, "voice": True}
+        }
+        
+    Raises:
+        Exception: If no numbers available or purchase fails
+    """
+    try:
+        # Search for available numbers
+        log_info(f"Searching for available numbers in area code {area_code}")
+        available_numbers = client.available_phone_numbers('US').local.list(
+            area_code=area_code,
+            sms_enabled=True,
+            voice_enabled=True,
+            limit=10
+        )
+        
+        if not available_numbers:
+            raise Exception(f"No available numbers in area code {area_code}")
+        
+        # Purchase the first available number
+        number_to_purchase = available_numbers[0].phone_number
+        log_info(f"Purchasing number: {number_to_purchase}")
+        
+        purchased_number = client.incoming_phone_numbers.create(
+            phone_number=number_to_purchase
+        )
+        
+        log_info("Purchased Twilio Number", f"Number: {purchased_number.phone_number}, SID: {purchased_number.sid}")
+        
+        return {
+            "phone_number": purchased_number.phone_number,
+            "sid": purchased_number.sid,
+            "capabilities": {
+                "sms": purchased_number.capabilities.get('sms', False),
+                "voice": purchased_number.capabilities.get('voice', False)
+            }
+        }
+    except Exception as e:
+        log_error("Failed to purchase number", str(e))
+        raise e
+
+def add_number_to_proxy_service(phone_number: str):
+    """
+    Add a purchased phone number to the Twilio Proxy Service.
+    
+    Args:
+        phone_number (str): E.164 formatted phone number
+        
+    Returns:
+        str: Proxy Phone SID (PNxxxxxxxx...)
+        
+    Raises:
+        Exception: If number already in proxy or add fails
+    """
+    try:
+        log_info(f"Adding number {phone_number} to Proxy Service")
+        proxy_phone = client.proxy.v1.services(service_sid).phone_numbers.create(
+            phone_number=phone_number
+        )
+        
+        log_info("Added number to Proxy Service", f"Number: {phone_number}, Proxy SID: {proxy_phone.sid}")
+        
+        return proxy_phone.sid
+    except Exception as e:
+        log_error("Failed to add number to Proxy", str(e))
+        raise e

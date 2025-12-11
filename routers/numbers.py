@@ -37,6 +37,19 @@ class AttachNumberRequest(BaseModel):
                 raise ValueError("sitter_id cannot be empty")
         return v
 
+class PurchaseNumberRequest(BaseModel):
+    lifecycle: str  # "pool", "reserved", "standby"
+    area_code: str = "303"
+    sitter_id: Optional[str] = None
+    
+    @field_validator('lifecycle')
+    @classmethod
+    def validate_lifecycle(cls, v: str) -> str:
+        allowed = ["pool", "reserved", "standby"]
+        if v.lower() not in allowed:
+            raise ValueError(f"lifecycle must be one of {allowed}")
+        return v.lower()
+
 @router.post("/attach-number")
 async def attach_number(
     request: Request,
@@ -155,6 +168,27 @@ async def attach_number(
         raise HTTPException(status_code=500, detail=f"Failed to assign number: {str(e)}")
 
     # ---------------------------------------------------------
+    # 3.5. Add Number to Twilio Proxy Service
+    # ---------------------------------------------------------
+    # Add the number to Proxy Service so it can be used for sessions
+    try:
+        from services.twilio_proxy import add_number_to_proxy_service
+        proxy_phone_sid = add_number_to_proxy_service(new_number)
+        
+        # Update inventory record with Proxy SID
+        inventory_table.update(new_number_id, {
+            "Proxy Phone SID": proxy_phone_sid,
+            "Attach Status": "Ready"
+        })
+        
+        log_info(f"Number {new_number} attached to Proxy Service (SID: {proxy_phone_sid})")
+        
+    except Exception as e:
+        log_error(f"Failed to attach number to Proxy: {str(e)}")
+        # Don't fail the entire request, just log the error
+        # Zap 3 will retry attachment if needed
+
+    # ---------------------------------------------------------
     # 4. Release Old Number (if any)
     # ---------------------------------------------------------
     # If the Sitter had a previous number, update its status to 'Standby'
@@ -170,6 +204,84 @@ async def attach_number(
     log_event("NUMBER_ROTATION", f"Assigned {new_number} to sitter {sitter_id}")
     
     return {"status": "success", "new_number": new_number}
+
+@router.post("/numbers/purchase")
+async def purchase_number(request: PurchaseNumberRequest):
+    """
+    Purchase a new phone number from Twilio and add to inventory.
+    
+    Used by Zapier automations (Zaps 2, 4, 5) to provision new numbers.
+    
+    Args:
+        lifecycle: "pool", "reserved", or "standby"
+        area_code: Colorado area code (303 or 720)
+        sitter_id: Optional Airtable record ID if assigning to sitter
+        
+    Returns:
+        {
+            "success": true,
+            "phone_number": "+13035551234",
+            "number_inventory_id": "recXXXXXXXXXXXXXX",
+            "status": "pending",
+            "twilio_sid": "PNxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+    """
+    from datetime import datetime
+    
+    log_info(f"Purchasing {request.lifecycle} number in area code {request.area_code}")
+    
+    try:
+        # 1. Purchase number from Twilio
+        from services.twilio_proxy import search_and_purchase_number
+        purchased = search_and_purchase_number(request.area_code)
+        
+        # 2. Determine lifecycle value for Airtable (capitalize first letter)
+        lifecycle_map = {
+            "pool": "Pool",
+            "reserved": "Reserved Active",
+            "standby": "Standby Reserved"
+        }
+        lifecycle_value = lifecycle_map.get(request.lifecycle, request.lifecycle.title())
+        
+        # 3. Create Airtable Number Inventory record
+        inventory_fields = {
+            "PhoneNumber": purchased["phone_number"],
+            "Lifecycle": lifecycle_value,
+            "Status": "Pending",
+            "Twilio SID": purchased["sid"],
+            "Purchase Date": datetime.utcnow().isoformat()
+        }
+        
+        # Link to sitter if provided
+        if request.sitter_id:
+            inventory_fields["Assigned Sitter"] = [request.sitter_id.strip()]
+        
+        inventory_record = inventory_table.create(inventory_fields)
+        
+        # 4. Log purchase event
+        log_event(
+            "NUMBER_PURCHASED",
+            f"Purchased {request.lifecycle} number {purchased['phone_number']}",
+            f"Twilio SID: {purchased['sid']}, Airtable ID: {inventory_record['id']}, Lifecycle: {lifecycle_value}"
+        )
+        
+        log_info(f"Successfully purchased number {purchased['phone_number']} (ID: {inventory_record['id']})")
+        
+        return {
+            "success": True,
+            "phone_number": purchased["phone_number"],
+            "number_inventory_id": inventory_record["id"],
+            "status": "pending",
+            "twilio_sid": purchased["sid"]
+        }
+        
+    except Exception as e:
+        log_error(f"Failed to purchase number: {str(e)}")
+        return {
+            "success": False,
+            "error": str(e),
+            "details": "Check Twilio account balance and number availability"
+        }
 
 @router.get("/numbers/debug")
 async def debug_numbers():

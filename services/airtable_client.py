@@ -70,9 +70,51 @@ def find_client_by_phone(phone_number: str):
     records = clients_table.all(formula=formula)
     return records[0] if records else None
 
+def create_or_update_client(phone_number: str, name: str = "Unknown", **kwargs):
+    """
+    Find or create a Client record (upsert logic).
+    
+    Prevents duplicates when client texts before Zap 1 syncs.
+    
+    Args:
+        phone_number (str): E.164 formatted phone number
+        name (str): Client name
+        **kwargs: Additional fields to update (email, address, etc.)
+        
+    Returns:
+        tuple: (record dict, was_created bool)
+    """
+    # Search for existing client by phone number
+    existing = find_client_by_phone(phone_number)
+    
+    if existing:
+        # Update existing record
+        update_fields = {"Name": name, "Last Active": datetime.utcnow().isoformat()}
+        update_fields.update(kwargs)
+        
+        updated = clients_table.update(existing["id"], update_fields)
+        from utils.logger import log_info
+        log_info(f"Updated existing client: {phone_number}")
+        return (updated, False)
+    else:
+        # Create new record
+        create_fields = {
+            "Phone Number": phone_number,
+            "Name": name,
+            "Created At": datetime.utcnow().isoformat()
+        }
+        create_fields.update(kwargs)
+        
+        created = clients_table.create(create_fields)
+        from utils.logger import log_info
+        log_info(f"Created new client: {phone_number}")
+        return (created, True)
+
 def create_client(phone_number: str, name: str = "Unknown"):
     """
     Creates a new Client record in Airtable.
+    
+    DEPRECATED: Use create_or_update_client() instead for better deduplication.
     
     Args:
         phone_number (str): The client's real phone number.
@@ -81,11 +123,8 @@ def create_client(phone_number: str, name: str = "Unknown"):
     Returns:
         dict: The created Airtable record.
     """
-    return clients_table.create({
-        "Phone Number": phone_number,
-        "Name": name,
-        "Created At": datetime.utcnow().isoformat()
-    })
+    record, _ = create_or_update_client(phone_number, name)
+    return record
 
 def update_client_session(client_id: str, session_sid: str):
     """
