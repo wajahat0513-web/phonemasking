@@ -1,0 +1,5 @@
+PhoneNumber,Lifecycle,Status,Purchase Date,Twilio SID,Proxy Phone SID,Attach Status,Assigned Sitter
++18046046355,Reserved Active,Ready,2025-12-10,PN1234567890abcdef1234567890abcd,PN1234567890abcdef1234567890abcd,Ready,Sarah Johnson
++17205864405,Pool,Pending,2025-12-11,PN2234567890abcdef1234567890abcd,,Pending,
++19522484813,Pool,Ready,2025-12-10,PN3234567890abcdef1234567890abcd,PN3234567890abcdef1234567890abcd,Ready,
++18335709378,Standby Reserved,Ready,2025-12-10,PN4234567890abcdef1234567890abcd,PN4234567890abcdef1234567890abcd,Ready,
