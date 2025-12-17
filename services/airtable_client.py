@@ -37,9 +37,31 @@ def find_sitter_by_twilio_number(twilio_number: str):
     Returns:
         dict: The Airtable record for the sitter, or None if not found.
     """
-    formula = f"{{Twilio Number}} = '{twilio_number}'"
-    records = sitters_table.all(formula=formula)
-    return records[0] if records else None
+    # Clean input: keep only digits
+    clean_num = "".join(filter(str.isdigit, twilio_number))
+    if clean_num.startswith("1") and len(clean_num) > 10:
+        clean_num = clean_num[1:] # 10-digit version
+    
+    # Very robust formula that checks Twilio Number and some variations, 
+    # and handles common formatting like (303) 555-1212
+    # We use SEARCH so that '+13035551212' matches '3035551212' or '(303) 555-1212'
+    formula = f"OR(" \
+              f"SEARCH('{clean_num}', {{Twilio Number}}), " \
+              f"SEARCH('{clean_num}', {{Sitter Phone (E.164)}}), " \
+              f"{{Twilio Number}} = '{twilio_number}'" \
+              f")"
+    
+    try:
+        records = sitters_table.all(formula=formula)
+        return records[0] if records else None
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error in find_sitter_by_twilio_number: {str(e)}")
+        # Fallback to simple lookup if complex formula fails
+        try:
+            return sitters_table.all(formula=f"{{Twilio Number}} = '{twilio_number}'")[0]
+        except:
+             return None
 
 def find_sitter_by_id(sitter_id: str):
     """
@@ -66,9 +88,30 @@ def find_client_by_phone(phone_number: str):
     Returns:
         dict: The Airtable record for the client, or None if not found.
     """
-    formula = f"{{Phone Number}} = '{phone_number}'"
-    records = clients_table.all(formula=formula)
-    return records[0] if records else None
+    # Clean input: keep only digits
+    clean_num = "".join(filter(str.isdigit, phone_number))
+    if clean_num.startswith("1") and len(clean_num) > 10:
+        clean_num = clean_num[1:] # 10-digit version
+
+    # Check common field names: Phone Number, Client Phone (E.164), etc.
+    formula = f"OR(" \
+              f"SEARCH('{clean_num}', {{Phone Number}}), " \
+              f"SEARCH('{clean_num}', {{Client Phone (E.164)}}), " \
+              f"SEARCH('{clean_num}', {{Client Phone (raw)}}), " \
+              f"{{Phone Number}} = '{phone_number}'" \
+              f")"
+    
+    try:
+        records = clients_table.all(formula=formula)
+        return records[0] if records else None
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error in find_client_by_phone: {str(e)}")
+        # Fallback to simple lookup
+        try:
+            return clients_table.all(formula=f"{{Phone Number}} = '{phone_number}'")[0]
+        except:
+            return None
 
 def create_or_update_client(phone_number: str, name: str = "Unknown", **kwargs):
     """
