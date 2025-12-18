@@ -102,17 +102,28 @@ async def out_of_session(request: Request):
     # 4. Add Participants to Session
     # ---------------------------------------------------------
     # Add the Sitter and the Client to the session.
-    # - Sitter: Identified by their real phone number, communicating via the Proxy Number (To).
-    # - Client: Identified by their real phone number (From), communicating via the Proxy Number (To).
+    # Safety Check: If sender is actually the sitter, don't add them as 'Client'
+    if From == sitter_real_phone:
+        log_info("Sender is already the Sitter, skipping duplicate participant addition.")
+        # We still need to make sure they are in the session though
+    
     try:
-        # Add participants and explicitly specify the proxy_identifier (To)
-        # to prevent Twilio from trying to find a "compatible" number and failing
-        # for international/Canadian numbers (Error 80203).
-        add_participant(session_sid, identifier=sitter_real_phone, proxy_identifier=To)
-        add_participant(session_sid, identifier=From, proxy_identifier=To)
+        # Check existing participants to avoid 400 error (identifier already in use)
+        from services.twilio_proxy import list_participants
+        existing_ps = list_participants(session_sid)
+        existing_identifiers = [p.identifier for p in existing_ps]
+
+        if sitter_real_phone not in existing_identifiers:
+            add_participant(session_sid, identifier=sitter_real_phone, proxy_identifier=To)
+        
+        if From not in existing_identifiers:
+            add_participant(session_sid, identifier=From, proxy_identifier=To)
+            
     except Exception as e:
-        log_error("Failed to add participants", str(e))
-        raise HTTPException(status_code=500, detail="Failed to add participants")
+        log_error("Failed to sync participants in create_session", str(e))
+        # Decide if we fail the whole request or try to continue
+        # Usually, if we can't add participants, session is useless.
+        raise HTTPException(status_code=500, detail=f"Failed to sync participants: {str(e)}")
 
     # ---------------------------------------------------------
     # 5. Update Client Record

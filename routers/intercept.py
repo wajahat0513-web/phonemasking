@@ -78,6 +78,7 @@ async def intercept(request: Request):
     # ---------------------------------------------------------
     # The Sitter is always associated with the 'To' number (the proxy number)
     sitter = find_sitter_by_twilio_number(to_num)
+    sitter_airtable_phone = None
     
     if sitter:
         sitter_airtable_phone = sitter["fields"].get("Phone Number")
@@ -85,23 +86,29 @@ async def intercept(request: Request):
         
         # SYNC CHECK: Verify if Sitter's phone number in Twilio matches Airtable
         participants = list_participants(session_sid)
-        sitter_participant = next((p for p in participants if p.proxy_identifier == to_num and p.identifier != from_num), None)
         
-        # Also check if Sitter is the one SENDING (outbound)
-        if not sitter_participant and from_num == sitter_airtable_phone:
-             sitter_participant = next((p for p in participants if p.identifier == from_num), None)
-
-        if sitter_participant and sitter_airtable_phone:
-            # Clean numbers for comparison
-            p_phone = "".join(filter(str.isdigit, sitter_participant.identifier))
-            db_phone = "".join(filter(str.isdigit, sitter_airtable_phone))
+        # 1. Is there ANY participant already using the sitter's CURRENT phone number?
+        current_sitter_p = next((p for p in participants if p.identifier == sitter_airtable_phone), None)
+        
+        # 2. If the current sitter isn't in the session, but we identified the sitter by context, 
+        # we check for an "outdated" sitter participant (someone using the proxy but with a different number)
+        if not current_sitter_p:
+            # The 'Outdated' sitter is the one who IS NOT the sender and IS NOT using the client's number
+            outdated_sitter_p = next((p for p in participants if p.identifier != from_num), None)
             
-            if p_phone != db_phone:
-                log_info(f"Sitter phone mismatch detected! Twilio: {p_phone}, Airtable: {db_phone}. Updating...")
-                # Remove old sitter participant and add new one
-                remove_participant(session_sid, sitter_participant.sid)
+            if outdated_sitter_p:
+                log_info(f"Sitter phone mismatch detected! Old participant: {outdated_sitter_p.identifier}, New Airtable: {sitter_airtable_phone}. Syncing...")
+                # Remove old sitter and add new one
+                remove_participant(session_sid, outdated_sitter_p.sid)
+                try:
+                    add_participant(session_sid, identifier=sitter_airtable_phone, proxy_identifier=to_num)
+                    log_info("Successfully updated Sitter phone in Twilio session.")
+                except Exception as sync_err:
+                    log_error("Failed to re-add sitter during sync", str(sync_err))
+            else:
+                # Session might be empty or missing sitter, add them
+                log_info(f"Sitter missing from session, adding {sitter_airtable_phone}")
                 add_participant(session_sid, identifier=sitter_airtable_phone, proxy_identifier=to_num)
-                log_info("Successfully updated Sitter phone in Twilio session.")
 
     # ---------------------------------------------------------
     # 3. Client Tracking & TTL
