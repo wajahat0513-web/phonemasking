@@ -43,6 +43,13 @@ async def intercept(request: Request):
     log_info(f"Intercept request headers: {dict(request.headers)}")
     log_info(f"Intercept content-type: {request.headers.get('content-type', 'MISSING')}")
     
+    # Try to log raw body for deepest debugging
+    try:
+        raw_body = await request.body()
+        log_info(f"Intercept raw body: {raw_body.decode('utf-8', errors='replace')}")
+    except Exception as e:
+        log_info(f"Could not read raw body: {e}")
+
     payload = await parse_incoming_payload(
         request,
         required_fields=[], # Make them optional here to log properly if missing
@@ -70,43 +77,39 @@ async def intercept(request: Request):
     if not To.startswith("+"):
         To = f"+{To}"
     
-    log_info(f"Intercepted message from {From} to {To} in session {session_sid}")
+    log_info(f"Processing message from {From} to {To} in session {session_sid}")
 
     # ---------------------------------------------------------
     # 1. Update Client Activity & Check TTL
     # ---------------------------------------------------------
-    # Find the client associated with the sender's phone number.
-    # Update their 'Last Active' timestamp to keep the session alive.
-    # If the session has exceeded the TTL (e.g., 14 days), close it.
     client = find_client_by_phone(From)
     
     if client:
+        log_info(f"Matched client: {client['fields'].get('Name', 'Unknown')} (ID: {client['id']})")
         update_last_active(client["id"], session_sid)
         
         if is_ttl_expired(client):
+            log_info("Session TTL expired, handling expiry...")
             handle_ttl_expiry(client)
+    else:
+        log_info(f"No client record found for phone: {From}")
 
     # ---------------------------------------------------------
     # 2. Log Message to Airtable
     # ---------------------------------------------------------
-    # Save the message details to the 'Messages' table in Airtable.
-    # This provides a complete history of the conversation.
     if session_sid:
+        log_info(f"Saving message to Airtable for session {session_sid}")
         save_message(session_sid, From, To, Body)
 
     # ---------------------------------------------------------
     # 3. Prepend Client Name to Message
     # ---------------------------------------------------------
-    # Look up client name and prepend to message for sitter clarity
     client_name = "Unknown Client"
     if client:
         client_name = client["fields"].get("Name", "Unknown Client")
     
-    # Prepend client name to message body
     modified_body = f"[{client_name}]: {Body}"
     
-    log_info(f"Prepending client name to message: {client_name}")
+    log_info(f"Final response body being returned to Twilio: {modified_body}")
     
-    # Return modified body to Twilio Proxy
-    # This instructs Proxy to send the modified message instead of original
     return {"body": modified_body}
