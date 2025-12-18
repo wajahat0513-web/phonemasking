@@ -117,6 +117,22 @@ def remove_participant(session_sid: str, participant_sid: str):
         log_error(f"Failed to remove participant {participant_sid}", str(e))
         return False
 
+def send_session_message(session_sid: str, participant_sid: str, body: str):
+    """
+    Sends a message through a Proxy session as a specific participant.
+    """
+    try:
+        interaction = client.proxy.v1.services(service_sid) \
+            .sessions(session_sid) \
+            .participants(participant_sid) \
+            .message_interactions \
+            .create(body=body)
+        log_info(f"Sent session message via Proxy → SID: {interaction.sid}")
+        return interaction.sid
+    except Exception as e:
+        log_error(f"Failed to send session message through Proxy", str(e))
+        return None
+
 def close_session(session_sid: str):
     """
     Terminates a Proxy Session.

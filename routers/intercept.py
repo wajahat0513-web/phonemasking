@@ -13,10 +13,10 @@ Endpoints:
 - POST /intercept: The webhook endpoint for active session messages.
 """
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response, status
 from services.airtable_client import save_message, find_client_by_phone, find_sitter_by_twilio_number, log_event
 from services.ttl_manager import is_ttl_expired, handle_ttl_expiry, update_last_active
-from services.twilio_proxy import get_participant, list_participants, add_participant, remove_participant
+from services.twilio_proxy import get_participant, list_participants, add_participant, remove_participant, send_session_message
 from utils.logger import log_info, log_error
 from utils.request_parser import parse_incoming_payload
 import json
@@ -117,18 +117,45 @@ async def intercept(request: Request):
                 handle_ttl_expiry(client)
 
     # ---------------------------------------------------------
-    # 4. Save & Prepend
+    # 4. Save & Prepend (Block & Re-send Strategy)
     # ---------------------------------------------------------
     save_message(session_sid, from_num, to_num, body)
 
+    # Loop prevention: If the body looks like it's already been prepended by us, 
+    # or if it was an internal Interaction created by our API, we should allow it as-is.
+    # However, to be safe, we check for our specific marker format.
+    if body.startswith("[") and "]:" in body:
+        log_info("Detected already modified message or loop, allowing through...")
+        return {"body": body}
+
     client_name = "Unknown Client"
+    is_client = False
     if client:
         client_name = client["fields"].get("Name", "Unknown Client")
+        is_client = True
     elif sitter and from_num == sitter.get("fields", {}).get("Phone Number"):
-        # If it's the Sitter talking, we don't necessarily need to prepend
+        # If it's the Sitter talking, we allow it through normally (200 OK)
+        log_info("Message is from Sitter, allowing through normally.")
         return {"body": body}
     
+    # If we are here, it's a message from a client (or unknown) that needs name prepending.
     modified_body = f"[{client_name}]: {body}"
-    log_info(f"Final response body: {modified_body}")
+    log_info(f"Triggering Block & Re-send with body: {modified_body}")
     
-    return {"body": modified_body}
+    # Manually send the message through proxy session
+    # We identify the recipient (Sitter) participant
+    participants = list_participants(session_sid)
+    # The recipient is whoever is NOT the sender in this 2-person session
+    recipient = next((p for p in participants if p.identifier != from_num), None)
+    # Actually, we should send it AS the client to the session so it routes to the Sitter.
+    # inbound_participant_sid is the SID of the client in this session
+    inbound_participant_sid = payload.get("inboundParticipantSid")
+    
+    if inbound_participant_sid:
+        send_session_message(session_sid, inbound_participant_sid, modified_body)
+        log_info("Manual message sent. Returning 403 to block original raw message.")
+        # Returning 403 (Forbidden) tells Twilio Proxy to STOP the original interaction
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
+    else:
+        log_error("Could not find inboundParticipantSid to re-send message. Defaulting to 200.")
+        return {"body": modified_body}
