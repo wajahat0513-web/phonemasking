@@ -151,18 +151,20 @@ def create_client(phone_number: str, name: str = "Unknown"):
     record, _ = create_or_update_client(phone_number, name)
     return record
 
-def update_client_session(client_id: str, session_sid: str):
+def update_client_session(client_id: str, session_sid: str, sitter_id: str = None):
     """
-    Updates a Client's record with the current active Session SID and timestamp.
-    
-    Args:
-        client_id (str): The Airtable Record ID of the client.
-        session_sid (str): The Twilio Proxy Session SID.
+    Updates a Client's record with the active Session SID, timestamp, and Sitter link.
     """
-    clients_table.update(client_id, {
+    update_fields = {
         "Session SID": session_sid,
         "Last Active": datetime.utcnow().isoformat()
-    })
+    }
+    
+    if sitter_id:
+        # Airtable linked fields expect an array of record IDs
+        update_fields["Linked Sitter"] = [sitter_id]
+        
+    clients_table.update(client_id, update_fields)
 
 def save_message(session_sid: str, from_number: str, to_number: str, body: str):
     """
@@ -301,5 +303,5 @@ def find_active_sessions_for_sitter(sitter_id: str):
     Returns:
         list: A list of Client records that have an active session with this sitter.
     """
-    formula = f"AND(FIND('{sitter_id}', {{Sitter}}), NOT({{Session SID}} = ''))"
+    formula = f"AND(FIND('{sitter_id}', {{Linked Sitter}}), NOT({{Session SID}} = ''))"
     return clients_table.all(formula=formula)

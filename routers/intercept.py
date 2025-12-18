@@ -112,9 +112,15 @@ async def intercept(request: Request):
         client = find_client_by_phone(from_num)
         if client:
             log_info(f"Matched client: {client['fields'].get('Name', 'Unknown')}")
-            update_last_active(client["id"], session_sid)
+            
+            # TTL CHECK: If expired, we "revive" it because they messaged.
+            # We reset the timer by updating last active.
             if is_ttl_expired(client):
-                handle_ttl_expiry(client)
+                log_info(f"Session technically expired (>14 days), but reviving due to new message from {from_num}")
+                log_event("SESSION_REVIVED", f"Client {client.get('id')} messaged after expiry. Resetting TTL.")
+            
+            # Pass sitter["id"] to ensure the 'Linked Sitter' field is maintained
+            update_last_active(client["id"], session_sid, sitter_id=sitter.get("id") if sitter else None)
 
     # ---------------------------------------------------------
     # 4. Save & Prepend (Block & Re-send Strategy)

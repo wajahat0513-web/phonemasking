@@ -43,7 +43,7 @@ def is_ttl_expired(client_record: dict) -> bool:
         
     return False
 
-def update_last_active(client_id: str, session_sid: str):
+def update_last_active(client_id: str, session_sid: str, sitter_id: str = None):
     """
     Updates the 'Last Active' timestamp for a client to the current time.
     
@@ -52,9 +52,10 @@ def update_last_active(client_id: str, session_sid: str):
     Args:
         client_id (str): The Client's Airtable Record ID.
         session_sid (str): The current Session SID.
+        sitter_id (str, optional): The Sitter's Airtable Record ID.
     """
     try:
-        update_client_session(client_id, session_sid)
+        update_client_session(client_id, session_sid, sitter_id=sitter_id)
         log_info(f"Updated Last Active for client {client_id}")
     except Exception as e:
         log_error(f"Failed to update Last Active for client {client_id}", str(e))

@@ -118,8 +118,8 @@ async def out_of_session(request: Request):
     # 5. Update Client Record
     # ---------------------------------------------------------
     # Store the new Session SID and update the Last Active timestamp
-    # in the Client's Airtable record.
-    update_client_session(client_id, session_sid)
+    # in the Client's Airtable record, and link the Sitter.
+    update_client_session(client_id, session_sid, sitter_id=sitter_id)
 
     # ---------------------------------------------------------
     # 6. Log Event
