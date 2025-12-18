@@ -99,11 +99,13 @@ async def out_of_session(request: Request):
         raise HTTPException(status_code=500, detail="Failed to create session")
 
     # ---------------------------------------------------------
-    # 4. Add Participants to Session (with Conflict Resolution)
+    # 4. Add Participants to Session (with Conflict & Concurrency Resolution)
     # ---------------------------------------------------------
-    def sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=True):
+    async def sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=True, attempt=0):
         try:
             from services.twilio_proxy import list_participants, close_session
+            import asyncio
+            
             existing_ps = list_participants(session_sid)
             existing_identifiers = [p.identifier for p in existing_ps]
 
@@ -116,21 +118,32 @@ async def out_of_session(request: Request):
             return True
         except Exception as e:
             err_msg = str(e)
+            
+            # CASE 1: 400 - Identifier already in use (Conflict)
             if "already in use" in err_msg.lower() and "KC" in err_msg and retry:
                 import re
                 match = re.search(r'(KC[a-f0-9]{32})', err_msg)
                 if match:
                     conflicting_sid = match.group(1)
-                    log_info(f"Detected stuck session {conflicting_sid}. Cleaning up before retry...")
+                    log_info(f"Detected stuck session {conflicting_sid}. Cleaning up and backing off...")
                     close_session(conflicting_sid)
-                    # Retry once
-                    return sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=False)
-            
+                    
+                    # BACKOFF: Wait for Twilio to release the lock
+                    await asyncio.sleep(2)
+                    return await sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=False)
+
+            # CASE 2: 409 - Duplicate participant request in progress (Concurrency)
+            if "409" in err_msg or "duplicate participant request" in err_msg.lower():
+                if attempt < 2:
+                    log_info(f"409 Concurrency Error. Retrying after 1s backoff (Attempt {attempt+1})...")
+                    await asyncio.sleep(1)
+                    return await sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=True, attempt=attempt+1)
+
             log_error("Final Participant Sync Failure", err_msg)
             return False
 
-    if not sync_participants_safe(session_sid, To, From, sitter_real_phone):
-        raise HTTPException(status_code=500, detail="Failed to sync participants even after cleanup retry.")
+    if not await sync_participants_safe(session_sid, To, From, sitter_real_phone):
+        raise HTTPException(status_code=500, detail="Failed to sync participants after conflict cleanup and backoff.")
 
     # ---------------------------------------------------------
     # 5. Finalize: Update Client Record & Log Success
