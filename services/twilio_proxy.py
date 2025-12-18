@@ -74,6 +74,49 @@ def add_participant(session_sid: str, identifier: str, proxy_identifier: str = N
         log_error("Failed to add participant", str(e))
         raise e
 
+def get_participant(session_sid: str, participant_sid: str):
+    """
+    Retrieves a participant's details from a session.
+    """
+    try:
+        participant = client.proxy.v1.services(service_sid) \
+            .sessions(session_sid) \
+            .participants(participant_sid) \
+            .fetch()
+        return participant
+    except Exception as e:
+        log_error(f"Failed to fetch participant {participant_sid}", str(e))
+        return None
+
+def list_participants(session_sid: str):
+    """
+    Lists all participants in a session.
+    """
+    try:
+        participants = client.proxy.v1.services(service_sid) \
+            .sessions(session_sid) \
+            .participants \
+            .list()
+        return participants
+    except Exception as e:
+        log_error(f"Failed to list participants for session {session_sid}", str(e))
+        return []
+
+def remove_participant(session_sid: str, participant_sid: str):
+    """
+    Removes a participant from a session.
+    """
+    try:
+        client.proxy.v1.services(service_sid) \
+            .sessions(session_sid) \
+            .participants(participant_sid) \
+            .delete()
+        log_info(f"Removed participant {participant_sid} from session {session_sid}")
+        return True
+    except Exception as e:
+        log_error(f"Failed to remove participant {participant_sid}", str(e))
+        return False
+
 def close_session(session_sid: str):
     """
     Terminates a Proxy Session.
