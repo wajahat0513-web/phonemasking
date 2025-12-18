@@ -14,6 +14,10 @@ app.include_router(numbers.router)
 async def startup_event():
     log_info("Starting Phone Masking Service")
     log_info(f"Loaded configuration for environment: {settings.AIRTABLE_BASE_ID}")
+    
+    # Start delivery fallback worker
+    from services.fallback_worker import start_fallback_worker
+    start_fallback_worker()
 
 @app.get("/")
 async def root():

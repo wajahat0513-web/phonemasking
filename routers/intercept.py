@@ -14,7 +14,7 @@ Endpoints:
 """
 
 from fastapi import APIRouter, Request, Response, status
-from services.airtable_client import save_message, find_client_by_phone, find_sitter_by_twilio_number, log_event
+from services.airtable_client import save_message, find_client_by_phone, find_sitter_by_twilio_number, log_event, update_message_status
 from services.ttl_manager import is_ttl_expired, handle_ttl_expiry, update_last_active
 from services.twilio_proxy import get_participant, list_participants, add_participant, remove_participant, send_session_message
 from utils.logger import log_info, log_error
@@ -132,7 +132,7 @@ async def intercept(request: Request):
     # ---------------------------------------------------------
     # 4. Save & Prepend (Block & Re-send Strategy)
     # ---------------------------------------------------------
-    save_message(session_sid, from_num, to_num, body)
+    message_record_id = save_message(session_sid, from_num, to_num, body)
 
     # LOOP PREVENTION: 
     # If the body already has our prepend marker, it means this is the intercept for 
@@ -140,7 +140,8 @@ async def intercept(request: Request):
     # but we don't want to modify it or re-trigger another send.
     if body.startswith("[") and "]:" in body:
         log_info(f"Intercept triggered for our own modified message: '{body}'. Allowing through.")
-        # Returning an empty dict or status OK is safer than re-prepending
+        # Mark the original message as Sent since it has finally arrived
+        update_message_status(message_record_id, "Sent")
         return {"status": "ok"}
 
     client_name = "Unknown Client"
@@ -180,6 +181,9 @@ async def intercept(request: Request):
         # sends the message TO that participant.
         send_session_message(session_sid, recipient_p.sid, modified_body)
         log_info("Manual message sent via API. Returning 403 to block the original raw message.")
+        # Note: We mark as Sent in the NEXT intercept call (the modified one)
+        # but we can also set a 'Relaying' status here if we want.
+        update_message_status(message_record_id, "Relaying")
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     else:
         log_error("CRITICAL: Could not identify a recipient participant. Falling back to 200.")

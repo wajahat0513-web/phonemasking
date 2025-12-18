@@ -166,7 +166,7 @@ def update_client_session(client_id: str, session_sid: str, sitter_id: str = Non
         
     clients_table.update(client_id, update_fields)
 
-def save_message(session_sid: str, from_number: str, to_number: str, body: str):
+def save_message(session_sid: str, from_number: str, to_number: str, body: str, intercepted: bool = False):
     """
     Logs a message to the Messages table.
     
@@ -176,13 +176,15 @@ def save_message(session_sid: str, from_number: str, to_number: str, body: str):
         to_number (str): The recipient's phone number.
         body (str): The content of the message.
     """
-    messages_table.create({
+    record = messages_table.create({
         "Session SID": session_sid,
         "From": from_number,
         "To": to_number,
         "Body": body,
-        "Timestamp": datetime.utcnow().isoformat()
+        "Timestamp": datetime.utcnow().isoformat(),
+        "Status": "Pending"
     })
+    return record.get("id")
 
 def log_event(event_type: str, description: str, details: str = ""):
     """
@@ -305,3 +307,20 @@ def find_active_sessions_for_sitter(sitter_id: str):
     """
     formula = f"AND(FIND('{sitter_id}', {{Linked Sitter}}), NOT({{Session SID}} = ''))"
     return clients_table.all(formula=formula)
+
+def get_pending_messages(older_than_minutes: int = 5):
+    """
+    Retrieves messages that have been in 'Pending' status for a specified duration.
+    """
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(minutes=older_than_minutes)
+    
+    # Formula filters for Status='Pending' AND Timestamp before cutoff
+    formula = f"AND({{Status}} = 'Pending', IS_BEFORE({{Timestamp}}, '{cutoff.isoformat()}'))"
+    return messages_table.all(formula=formula)
+
+def update_message_status(message_id: str, status: str):
+    """
+    Updates the delivery status of a message.
+    """
+    messages_table.update(message_id, {"Status": status})
