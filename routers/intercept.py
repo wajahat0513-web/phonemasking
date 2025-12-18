@@ -41,15 +41,24 @@ async def intercept(request: Request):
     """
     payload = await parse_incoming_payload(
         request,
-        required_fields=["From", "To", "Body"],
-        optional_fields=["AccountSid", "SessionSid"],
+        required_fields=[], # Make them optional here to log properly if missing
+        optional_fields=["From", "To", "Body", "AccountSid", "SessionSid", "interactionBody"],
     )
 
-    From = payload["From"]
-    To = payload["To"]
-    Body = payload["Body"]
+    # Log the payload for debugging 422s or missing fields
+    log_info(f"Intercept payload: {payload}")
+
+    From = payload.get("From")
+    To = payload.get("To")
+    Body = payload.get("Body") or payload.get("interactionBody")
     account_sid = payload.get("AccountSid")
     session_sid = payload.get("SessionSid")
+
+    # Re-enforce validation manually for better error messages
+    if not all([From, To, Body]):
+        missing = [k for k in ["From", "To", "Body"] if not payload.get(k)]
+        log_error(f"Intercept 422: Missing fields {missing}")
+        return {"status": "error", "message": f"Missing fields: {missing}"}
 
     # Normalize phone numbers to E.164 format (add + if missing)
     if not From.startswith("+"):
