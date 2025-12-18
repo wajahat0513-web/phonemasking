@@ -137,18 +137,24 @@ def close_session(session_sid: str):
     """
     Terminates a Proxy Session.
     
-    Once closed, participants can no longer message each other using the
-    assigned proxy numbers for this specific conversation.
-    
     Args:
         session_sid (str): The Session SID to close.
     """
     try:
+        # Check if it's already closed to avoid redundant requests
+        session = client.proxy.v1.services(service_sid).sessions(session_sid).fetch()
+        if session.status == "closed":
+            return True
+            
         client.proxy.v1.services(service_sid).sessions(session_sid).update(status="closed")
         log_info("Closed Twilio Session", f"SID: {session_sid}")
+        return True
     except Exception as e:
+        # If it's 404 or already closed, we don't care
+        if "not found" in str(e).lower() or "not exist" in str(e).lower():
+            return True
         log_error("Failed to close session", str(e))
-        raise e
+        return False
 
 def update_proxy_number(session_sid: str, participant_sid: str, new_number: str):
     """

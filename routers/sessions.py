@@ -99,43 +99,46 @@ async def out_of_session(request: Request):
         raise HTTPException(status_code=500, detail="Failed to create session")
 
     # ---------------------------------------------------------
-    # 4. Add Participants to Session
+    # 4. Add Participants to Session (with Conflict Resolution)
     # ---------------------------------------------------------
-    # Add the Sitter and the Client to the session.
-    # Safety Check: If sender is actually the sitter, don't add them as 'Client'
-    if From == sitter_real_phone:
-        log_info("Sender is already the Sitter, skipping duplicate participant addition.")
-        # We still need to make sure they are in the session though
-    
-    try:
-        # Check existing participants to avoid 400 error (identifier already in use)
-        from services.twilio_proxy import list_participants
-        existing_ps = list_participants(session_sid)
-        existing_identifiers = [p.identifier for p in existing_ps]
+    def sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=True):
+        try:
+            from services.twilio_proxy import list_participants, close_session
+            existing_ps = list_participants(session_sid)
+            existing_identifiers = [p.identifier for p in existing_ps]
 
-        if sitter_real_phone not in existing_identifiers:
-            add_participant(session_sid, identifier=sitter_real_phone, proxy_identifier=To)
-        
-        if From not in existing_identifiers:
-            add_participant(session_sid, identifier=From, proxy_identifier=To)
+            if sitter_real_phone not in existing_identifiers:
+                add_participant(session_sid, identifier=sitter_real_phone, proxy_identifier=To)
             
-    except Exception as e:
-        log_error("Failed to sync participants in create_session", str(e))
-        # Decide if we fail the whole request or try to continue
-        # Usually, if we can't add participants, session is useless.
-        raise HTTPException(status_code=500, detail=f"Failed to sync participants: {str(e)}")
+            if From not in existing_identifiers:
+                add_participant(session_sid, identifier=From, proxy_identifier=To)
+            
+            return True
+        except Exception as e:
+            err_msg = str(e)
+            if "already in use" in err_msg.lower() and "KC" in err_msg and retry:
+                import re
+                match = re.search(r'(KC[a-f0-9]{32})', err_msg)
+                if match:
+                    conflicting_sid = match.group(1)
+                    log_info(f"Detected stuck session {conflicting_sid}. Cleaning up before retry...")
+                    close_session(conflicting_sid)
+                    # Retry once
+                    return sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=False)
+            
+            log_error("Final Participant Sync Failure", err_msg)
+            return False
+
+    if not sync_participants_safe(session_sid, To, From, sitter_real_phone):
+        raise HTTPException(status_code=500, detail="Failed to sync participants even after cleanup retry.")
 
     # ---------------------------------------------------------
-    # 5. Update Client Record
+    # 5. Finalize: Update Client Record & Log Success
     # ---------------------------------------------------------
-    # Store the new Session SID and update the Last Active timestamp
-    # in the Client's Airtable record, and link the Sitter.
+    # ONLY update Airtable after we are 100% sure Twilio is ready.
+    # This prevents out-of-sync session IDs in your database.
     update_client_session(client_id, session_sid, sitter_id=sitter_id)
 
-    # ---------------------------------------------------------
-    # 6. Log Event
-    # ---------------------------------------------------------
-    # Log the successful creation of the session to the Audit Log.
     log_event("SESSION_CREATED", f"Session {session_sid} created for Sitter {sitter_id} and Client {client_id}")
     log_success("Session created successfully", f"Session: {session_sid}, Client: {From}, Sitter: {sitter_real_phone}")
 
