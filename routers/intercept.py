@@ -16,7 +16,7 @@ Endpoints:
 from fastapi import APIRouter, Request
 from services.airtable_client import save_message, find_client_by_phone, log_event
 from services.ttl_manager import is_ttl_expired, handle_ttl_expiry, update_last_active
-from utils.logger import log_info
+from utils.logger import log_info, log_error
 from utils.request_parser import parse_incoming_payload
 
 router = APIRouter()
