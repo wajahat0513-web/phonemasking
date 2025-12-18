@@ -148,26 +148,26 @@ async def intercept(request: Request):
     log_info(f"Triggering Block & Re-send for Client message. Modified: {modified_body}")
     
     # Find participants to ensure we have the right Client SID for re-sending
-    log_info(f"Verifying participants for re-send in session {session_sid}...")
+    # Manually send the message through proxy session
+    # We identify the recipient (Sitter) participant
     participants = list_participants(session_sid)
     
     # Log all for debug
+    log_info(f"Verifying participants for re-send in session {session_sid}...")
+    recipient_p = None
     for p in participants:
         log_info(f" - Participant: SID={p.sid}, Phone={p.identifier}, Proxy={p.proxy_identifier}")
+        # The recipient is whoever is NOT the sender (from_num)
+        if p.identifier != from_num:
+            recipient_p = p
 
-    # We want to send the message AS the client who sent the original.
-    # inbound_participant_sid from payload is usually the best bet, 
-    # but let's double check against our phone lookup.
-    sender_p = next((p for p in participants if p.identifier == from_num), None)
-    
-    # If we can't find them by phone, fall back to the one in the payload
-    sender_sid = sender_p.sid if sender_p else payload.get("inboundParticipantSid")
-    
-    if sender_sid:
-        log_info(f"Re-sending message AS participant {sender_sid} (should route to Sitter).")
-        send_session_message(session_sid, sender_sid, modified_body)
+    if recipient_p:
+        log_info(f"Targeting recipient {recipient_p.identifier} (SID: {recipient_p.sid}) for modified message.")
+        # IMPORTANT: In Twilio Proxy, creating a MessageInteraction on a participant resource 
+        # sends the message TO that participant.
+        send_session_message(session_sid, recipient_p.sid, modified_body)
         log_info("Manual message sent via API. Returning 403 to block the original raw message.")
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     else:
-        log_error("CRITICAL: Could not identify a sender participant SID. Falling back to 200.")
+        log_error("CRITICAL: Could not identify a recipient participant. Falling back to 200.")
         return {"body": modified_body}
