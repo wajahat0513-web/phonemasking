@@ -39,13 +39,11 @@ def find_sitter_by_twilio_number(twilio_number: str):
     # Get 10-digit version if it's 11 digits starting with 1
     ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
     
-    # Check Twilio Number, Phone Number, and E.164 variants
+    # Check Twilio Number and Phone Number
     # We use SEARCH on the ten-digit version to be most flexible
     formula = f"OR(" \
               f"SEARCH('{ten_digit}', {{Twilio Number}}), " \
               f"SEARCH('{ten_digit}', {{Phone Number}}), " \
-              f"SEARCH('{ten_digit}', {{Sitter Phone (E.164)}}), " \
-              f"SEARCH('{ten_digit}', {{Sitter Phone (raw)}}), " \
               f"{{Twilio Number}} = '{twilio_number}', " \
               f"{{Phone Number}} = '{twilio_number}'" \
               f")"
@@ -83,11 +81,9 @@ def find_client_by_phone(phone_number: str):
     clean_num = "".join(filter(str.isdigit, phone_number))
     ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
 
-    # Check common field names: Phone Number, Client Phone (E.164), etc.
+    # Check primary Phone Number field
     formula = f"OR(" \
               f"SEARCH('{ten_digit}', {{Phone Number}}), " \
-              f"SEARCH('{ten_digit}', {{Client Phone (E.164)}}), " \
-              f"SEARCH('{ten_digit}', {{Client Phone (raw)}}), " \
               f"{{Phone Number}} = '{phone_number}'" \
               f")"
     
