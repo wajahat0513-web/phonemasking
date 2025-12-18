@@ -29,26 +29,25 @@ audit_table = base.table(settings.AIRTABLE_AUDIT_LOG_TABLE)
 
 def find_sitter_by_twilio_number(twilio_number: str):
     """
-    Finds a Sitter record that is assigned a specific Twilio proxy number.
-    
-    Args:
-        twilio_number (str): The proxy phone number (e.g., +1555...).
-        
-    Returns:
-        dict: The Airtable record for the sitter, or None if not found.
+    Finds a Sitter record checking multiple possible phone columns and formats.
     """
+    if not twilio_number:
+        return None
+        
     # Clean input: keep only digits
     clean_num = "".join(filter(str.isdigit, twilio_number))
-    if clean_num.startswith("1") and len(clean_num) > 10:
-        clean_num = clean_num[1:] # 10-digit version
+    # Get 10-digit version if it's 11 digits starting with 1
+    ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
     
-    # Very robust formula that checks Twilio Number and some variations, 
-    # and handles common formatting like (303) 555-1212
-    # We use SEARCH so that '+13035551212' matches '3035551212' or '(303) 555-1212'
+    # Check Twilio Number, Phone Number, and E.164 variants
+    # We use SEARCH on the ten-digit version to be most flexible
     formula = f"OR(" \
-              f"SEARCH('{clean_num}', {{Twilio Number}}), " \
-              f"SEARCH('{clean_num}', {{Sitter Phone (E.164)}}), " \
-              f"{{Twilio Number}} = '{twilio_number}'" \
+              f"SEARCH('{ten_digit}', {{Twilio Number}}), " \
+              f"SEARCH('{ten_digit}', {{Phone Number}}), " \
+              f"SEARCH('{ten_digit}', {{Sitter Phone (E.164)}}), " \
+              f"SEARCH('{ten_digit}', {{Sitter Phone (raw)}}), " \
+              f"{{Twilio Number}} = '{twilio_number}', " \
+              f"{{Phone Number}} = '{twilio_number}'" \
               f")"
     
     try:
@@ -57,11 +56,7 @@ def find_sitter_by_twilio_number(twilio_number: str):
     except Exception as e:
         from utils.logger import log_error
         log_error(f"Error in find_sitter_by_twilio_number: {str(e)}")
-        # Fallback to simple lookup if complex formula fails
-        try:
-            return sitters_table.all(formula=f"{{Twilio Number}} = '{twilio_number}'")[0]
-        except:
-             return None
+        return None
 
 def find_sitter_by_id(sitter_id: str):
     """
@@ -81,23 +76,18 @@ def find_sitter_by_id(sitter_id: str):
 def find_client_by_phone(phone_number: str):
     """
     Finds a Client record by their real phone number.
-    
-    Args:
-        phone_number (str): The client's real phone number.
-        
-    Returns:
-        dict: The Airtable record for the client, or None if not found.
     """
-    # Clean input: keep only digits
+    if not phone_number:
+        return None
+        
     clean_num = "".join(filter(str.isdigit, phone_number))
-    if clean_num.startswith("1") and len(clean_num) > 10:
-        clean_num = clean_num[1:] # 10-digit version
+    ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
 
     # Check common field names: Phone Number, Client Phone (E.164), etc.
     formula = f"OR(" \
-              f"SEARCH('{clean_num}', {{Phone Number}}), " \
-              f"SEARCH('{clean_num}', {{Client Phone (E.164)}}), " \
-              f"SEARCH('{clean_num}', {{Client Phone (raw)}}), " \
+              f"SEARCH('{ten_digit}', {{Phone Number}}), " \
+              f"SEARCH('{ten_digit}', {{Client Phone (E.164)}}), " \
+              f"SEARCH('{ten_digit}', {{Client Phone (raw)}}), " \
               f"{{Phone Number}} = '{phone_number}'" \
               f")"
     
@@ -107,11 +97,7 @@ def find_client_by_phone(phone_number: str):
     except Exception as e:
         from utils.logger import log_error
         log_error(f"Error in find_client_by_phone: {str(e)}")
-        # Fallback to simple lookup
-        try:
-            return clients_table.all(formula=f"{{Phone Number}} = '{phone_number}'")[0]
-        except:
-            return None
+        return None
 
 def create_or_update_client(phone_number: str, name: str = "Unknown", **kwargs):
     """

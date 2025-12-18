@@ -105,10 +105,11 @@ async def out_of_session(request: Request):
     # - Sitter: Identified by their real phone number, communicating via the Proxy Number (To).
     # - Client: Identified by their real phone number (From), communicating via the Proxy Number (To).
     try:
-        # Add participants WITHOUT specifying proxy_identifier
-        # Twilio will automatically assign a proxy number from the pool
-        add_participant(session_sid, identifier=sitter_real_phone)
-        add_participant(session_sid, identifier=From)
+        # Add participants and explicitly specify the proxy_identifier (To)
+        # to prevent Twilio from trying to find a "compatible" number and failing
+        # for international/Canadian numbers (Error 80203).
+        add_participant(session_sid, identifier=sitter_real_phone, proxy_identifier=To)
+        add_participant(session_sid, identifier=From, proxy_identifier=To)
     except Exception as e:
         log_error("Failed to add participants", str(e))
         raise HTTPException(status_code=500, detail="Failed to add participants")
