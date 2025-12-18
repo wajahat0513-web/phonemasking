@@ -15,6 +15,10 @@ async def startup_event():
     log_info("Starting Phone Masking Service")
     log_info(f"Loaded configuration for environment: {settings.AIRTABLE_BASE_ID}")
 
+@app.get("/")
+async def root():
+    return {"message": "Phone Masking Service is running"}
+
 @app.get("/debug/sitters")
 async def debug_sitters():
     from services.airtable_client import sitters_table

@@ -37,6 +37,10 @@ async def parse_incoming_payload(
     for key, value in request.query_params.items():
         data.setdefault(key, value)
 
+    # Debug log the extracted data before filtering
+    from utils.logger import log_info
+    log_info(f"Raw parsed data: {data}")
+
     missing = [field for field in required_fields if not data.get(field)]
     if missing:
         raise HTTPException(
