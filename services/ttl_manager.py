@@ -11,7 +11,7 @@ Key Functionality:
 This ensures that old, unused sessions are cleaned up and do not persist indefinitely.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from services.airtable_client import update_client_session, log_event
 from services.twilio_proxy import close_session
 from utils.logger import log_info, log_error
@@ -32,9 +32,15 @@ def is_ttl_expired(client_record: dict) -> bool:
     if not last_active_str:
         return False
     
-    last_active = datetime.fromisoformat(last_active_str)
-    if datetime.utcnow() - last_active > timedelta(days=TTL_DAYS):
-        return True
+    try:
+        # Airtable returns ISO strings with timezones, make comparison aware
+        last_active = datetime.fromisoformat(last_active_str.replace('Z', '+00:00'))
+        if datetime.now(timezone.utc) - last_active > timedelta(days=TTL_DAYS):
+            return True
+    except Exception as e:
+        log_error("Error parsing Last Active date", str(e))
+        return False
+        
     return False
 
 def update_last_active(client_id: str, session_sid: str):
