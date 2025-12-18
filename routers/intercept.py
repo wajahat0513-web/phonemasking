@@ -39,6 +39,10 @@ async def intercept(request: Request):
     Returns:
         dict: Empty dictionary to acknowledge receipt (200 OK).
     """
+    # Debug: Log raw request details
+    log_info(f"Intercept request headers: {dict(request.headers)}")
+    log_info(f"Intercept content-type: {request.headers.get('content-type', 'MISSING')}")
+    
     payload = await parse_incoming_payload(
         request,
         required_fields=[], # Make them optional here to log properly if missing
