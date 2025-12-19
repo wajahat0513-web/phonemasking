@@ -319,8 +319,78 @@ def get_pending_messages(older_than_minutes: int = 5):
     formula = f"AND({{Status}} = 'Pending', IS_BEFORE({{Timestamp}}, '{cutoff.isoformat()}'))"
     return messages_table.all(formula=formula)
 
-def update_message_status(message_id: str, status: str):
-    """
-    Updates the delivery status of a message.
-    """
     messages_table.update(message_id, {"Status": status})
+
+def get_ready_pool_number():
+    """
+    Fetches a number from inventory with Lifecycle='pool' and Status='Ready'.
+    """
+    try:
+        # Formula: AND(Lifecycle='pool', Status='Ready')
+        formula = "AND({Lifecycle}='pool', {Status}='Ready')"
+        records = inventory_table.all(formula=formula)
+        return records[0] if records else None
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error fetching ready pool number: {str(e)}")
+        return None
+
+def assign_pool_number_to_client(client_id: str, number_record_id: str, number_value: str):
+    """
+    Assigns a pool number to a client and updates the inventory status.
+    """
+    try:
+        # 1. Update Client with the assigned number
+        clients_table.update(client_id, {"twilio-number": number_value})
+        
+        # 2. Update Inventory to mark as Assigned (Status='Assigned')
+        inventory_table.update(number_record_id, {"Status": "Assigned"})
+        return True
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Failed to assign pool number: {str(e)}")
+        return False
+
+def update_client_linked_sitter(client_id: str, sitter_name: str):
+    """
+    Updates the Linked-Sitter field for a client.
+    """
+    try:
+        clients_table.update(client_id, {"Linked-Sitter": sitter_name})
+        return True
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Failed to link sitter: {str(e)}")
+        return False
+
+def increment_client_error_count(client_id: str):
+    """
+    Increments the Twilio-Error-Count for a client.
+    Note: Airtable doesn't support atomic increments easily via API, so we read-then-write or just set to 1 if new.
+    For simplicity/robustness in high concurrency, strict counting might be hard, but best effort:
+    """
+    try:
+        client = clients_table.get(client_id)
+        current = client["fields"].get("Twilio-Error-Count", 0)
+        new_count = current + 1
+        clients_table.update(client_id, {"Twilio-Error-Count": new_count})
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Failed to increment error count: {str(e)}")
+
+def find_client_by_twilio_number(twilio_number: str):
+    """
+    Finds a Client record by their assigned 'twilio-number'. (Used for Sitter -> Client routing)
+    """
+    if not twilio_number:
+        return None
+    
+    # Formula: {twilio-number} = 'number'
+    formula = f"{{twilio-number}} = '{twilio_number}'"
+    try:
+        records = clients_table.all(formula=formula)
+        return records[0] if records else None
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error finding client by pool number: {str(e)}")
+        return None

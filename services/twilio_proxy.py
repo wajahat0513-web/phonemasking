@@ -258,3 +258,27 @@ def add_number_to_proxy_service(phone_number: str):
     except Exception as e:
         log_error("Failed to add number to Proxy", str(e))
         raise e
+
+def send_sms(from_number: str, to_number: str, body: str):
+    """
+    Sends a standard programmable SMS (bypassing Proxy Sessions).
+    
+    Args:
+        from_number (str): The Twilio number to send FROM.
+        to_number (str): The destination number.
+        body (str): The message content.
+        
+    Returns:
+        str: Message SID.
+    """
+    try:
+        message = client.messages.create(
+            body=body,
+            from_=from_number,
+            to=to_number
+        )
+        log_info(f"Sent SMS from {from_number} to {to_number}: {message.sid}")
+        return message.sid
+    except Exception as e:
+        log_error(f"Failed to send SMS from {from_number} to {to_number}", str(e))
+        raise e

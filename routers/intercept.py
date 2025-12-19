@@ -1,190 +1,162 @@
 """
-Intercept Router
-================
-This script handles the real-time interception and logging of messages within active sessions.
+Intercept Router (Manual Proxy)
+===============================
+This script handles the manual interception and routing of messages, bypassing Twilio Proxy Sessions.
 
 Key Functionality:
-- Acts as a webhook listener for Twilio Proxy interactions.
-- Logs every message (body, sender, recipient) to Airtable for auditing.
-- Updates the 'Last Active' timestamp for Clients to track engagement.
-- Checks and enforces Time-To-Live (TTL) policies to expire old sessions.
+- INBOUND (Client -> Sitter):
+  1. Intercepts message to Sitter's Number.
+  2. Checks/Assigns a 'Pool Number' to the Client from Inventory.
+  3. Links Sitter to Client in Airtable.
+  4. Manually forwards SMS from Pool Number to Sitter with [Client Name] prefix.
+  5. Returns 403 to Twilio to block default routing.
 
-Endpoints:
-- POST /intercept: The webhook endpoint for active session messages.
+- OUTBOUND (Sitter -> Client):
+  1. Intercepts message from Sitter.
+  2. Identifies Client based on the Pool Number texted (To).
+  3. Manually forwards SMS from Pool Number to Client's Real Number.
 """
 
 from fastapi import APIRouter, Request, Response, status
-from services.airtable_client import save_message, find_client_by_phone, find_sitter_by_twilio_number, log_event, update_message_status
-from services.ttl_manager import is_ttl_expired, handle_ttl_expiry, update_last_active
-from services.twilio_proxy import get_participant, list_participants, add_participant, remove_participant, send_session_message
+from services.airtable_client import (
+    find_sitter_by_twilio_number,
+    find_client_by_phone,
+    create_or_update_client,
+    get_ready_pool_number,
+    assign_pool_number_to_client,
+    update_client_linked_sitter,
+    find_client_by_twilio_number,
+    increment_client_error_count,
+    save_message,
+    update_message_status,
+    log_event
+)
+from services.twilio_proxy import send_sms
 from utils.logger import log_info, log_error
 from utils.request_parser import parse_incoming_payload
-import json
 
 router = APIRouter()
 
 @router.post("/intercept")
 async def intercept(request: Request):
-    # Debug: Log raw request details
-    log_info(f"Intercept request headers: {dict(request.headers)}")
+    payload = await parse_incoming_payload(request, required_fields=[])
     
-    payload = await parse_incoming_payload(
-        request,
-        required_fields=[],
-    )
-
-    log_info(f"Raw parsed data: {payload}")
-
-    # ---------------------------------------------------------
-    # 1. Strategic Field Extraction
-    # ---------------------------------------------------------
-    session_sid = payload.get("interactionSessionSid") or payload.get("SessionSid")
+    From = payload.get("From", "").strip()
+    To = payload.get("To", "").strip()
+    Body = payload.get("Body", "")
     
-    # Handle 'interactionData' JSON string
-    interaction_data_str = payload.get("interactionData")
-    body = payload.get("Body")
-    if interaction_data_str and not body:
-        try:
-            int_data = json.loads(interaction_data_str)
-            body = int_data.get("body")
-        except:
-            pass
-    
-    from_num = payload.get("From")
-    to_num = payload.get("To")
-    
-    # If From/To missing, use Participant SIDs to fetch data
-    inbound_participant_sid = payload.get("inboundParticipantSid")
-    if not from_num and inbound_participant_sid and session_sid:
-        participant = get_participant(session_sid, inbound_participant_sid)
-        if participant:
-            from_num = participant.identifier
-            to_num = participant.proxy_identifier
-            log_info(f"Fetched missing info from Twilio: From={from_num}, To={to_num}")
-
-    # Final validation
-    if not all([from_num, to_num, body, session_sid]):
-        log_error(f"Intercept 422: Missing critical fields", f"From={from_num}, To={to_num}, Body={body}, Session={session_sid}")
-        return {"status": "error", "message": "Missing critical fields"}
-
     # Normalize
-    if not from_num.startswith("+"): from_num = f"+{from_num}"
-    if not to_num.startswith("+"): to_num = f"+{to_num}"
-    
-    log_info(f"Processing intercept: {from_num} -> {to_num} (Session: {session_sid})")
+    if From and not From.startswith("+"): From = f"+{From}"
+    if To and not To.startswith("+"): To = f"+{To}"
 
-    # ---------------------------------------------------------
-    # 2. Sitter Lookup & Participant Sync
-    # ---------------------------------------------------------
-    # The Sitter is always associated with the 'To' number (the proxy number)
-    sitter = find_sitter_by_twilio_number(to_num)
-    sitter_airtable_phone = None
+    log_info(f"Intercept Triggered: {From} -> {To} | Body: {Body}")
+
+    # ==============================================================================
+    # 1. CHECK IF SITTER IS SENDER (Outbound: Sitter -> Client)
+    # ==============================================================================
+    # If the sender is a Sitter, they are replying to a Pool Number (To).
+    # We need to find which Client is assigned that Pool Number.
     
-    if sitter:
-        sitter_airtable_phone = sitter["fields"].get("Phone Number")
-        log_info(f"Matched Sitter: {sitter['fields'].get('Full Name')} (DB Phone: {sitter_airtable_phone})")
+    # Check if 'From' matches a known Sitter
+    # (Checking if sender is a Sitter requires looking up by their real phone)
+    sitter_sender = find_sitter_by_twilio_number(From)
+    
+    if sitter_sender:
+        log_info(f"Sender is Sitter {sitter_sender['fields'].get('Full Name')}. Routing to Client...")
         
-        # SYNC CHECK: Verify if Sitter's phone number in Twilio matches Airtable
-        participants = list_participants(session_sid)
+        # The 'To' number is the Pool Number they texted.
+        # Find which client has this pool number assigned.
+        client_recipient = find_client_by_twilio_number(To)
         
-        # 1. Is there ANY participant already using the sitter's CURRENT phone number?
-        current_sitter_p = next((p for p in participants if p.identifier == sitter_airtable_phone), None)
-        
-        # 2. If the current sitter isn't in the session, but we identified the sitter by context, 
-        # we check for an "outdated" sitter participant (someone using the proxy but with a different number)
-        if not current_sitter_p:
-            # The 'Outdated' sitter is the one who IS NOT the sender and IS NOT using the client's number
-            outdated_sitter_p = next((p for p in participants if p.identifier != from_num), None)
+        if client_recipient:
+            client_real_phone = client_recipient["fields"].get("Phone Number")
+            log_info(f"Found linked Client: {client_recipient['fields'].get('Name')} ({client_real_phone})")
             
-            if outdated_sitter_p:
-                log_info(f"Sitter phone mismatch detected! Old participant: {outdated_sitter_p.identifier}, New Airtable: {sitter_airtable_phone}. Syncing...")
-                # Remove old sitter and add new one
-                remove_participant(session_sid, outdated_sitter_p.sid)
-                try:
-                    add_participant(session_sid, identifier=sitter_airtable_phone, proxy_identifier=to_num)
-                    log_info("Successfully updated Sitter phone in Twilio session.")
-                except Exception as sync_err:
-                    log_error("Failed to re-add sitter during sync", str(sync_err))
+            try:
+                # Save message for audit/retry (Outbound Sitter->Client)
+                msg_id = save_message("Manual", To, client_real_phone, Body)
+                
+                # Forward: From Pool Number (To) -> Client Real Phone
+                send_sms(from_number=To, to_number=client_real_phone, body=Body)
+                
+                update_message_status(msg_id, "Sent")
+                log_info("Successfully forwarded Sitter -> Client")
+                return Response(status_code=status.HTTP_200_OK)
+            except Exception as e:
+                log_error("Failed to forward Sitter reply", str(e))
+                # Leave status as Pending for retry? Or Sitter needs immediate feedback?
+                # For now let worker retry if we leave it Pending (default save status)
+                return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            log_error(f"No Client found assigned to Pool Number {To}. Sitter reply orphan.")
+            # Optional: Reply to Sitter saying "Orphaned session"
+            return Response(status_code=status.HTTP_200_OK)
+
+    # ==============================================================================
+    # 2. CHECK IF RECIPIENT IS SITTER (Inbound: Client -> Sitter)
+    # ==============================================================================
+    # The 'To' number is the Sitter's real Twilio number (or Reserved Number).
+    
+    sitter_recipient = find_sitter_by_twilio_number(To)
+    
+    if sitter_recipient:
+        log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Processing Client message...")
+        
+        # 2a. Find or Create Client
+        client, _ = create_or_update_client(From)
+        client_id = client["id"]
+        client_name = client["fields"].get("Name", "Unknown")
+        client_pool_num = client["fields"].get("twilio-number")
+        
+        # 2b. Assign Pool Number if missing
+        assigned_number = client_pool_num
+        if not assigned_number:
+            log_info(f"Client {From} has no pool number. Fetching from inventory...")
+            pool_record = get_ready_pool_number()
+            
+            if pool_record:
+                new_pool_num = pool_record["fields"].get("PhoneNumber") or pool_record["fields"].get("Phone Number")
+                pool_record_id = pool_record["id"]
+                
+                if assign_pool_number_to_client(client_id, pool_record_id, new_pool_num):
+                    assigned_number = new_pool_num
+                    log_info(f"Assigned new Pool Number {assigned_number} to Client {client_id}")
+                else:
+                    log_error("Failed to assign available pool number.")
             else:
-                # Session might be empty or missing sitter, add them
-                log_info(f"Sitter missing from session, adding {sitter_airtable_phone}")
-                add_participant(session_sid, identifier=sitter_airtable_phone, proxy_identifier=to_num)
-
-    # ---------------------------------------------------------
-    # 3. Client Tracking & TTL
-    # ---------------------------------------------------------
-    # If the sender is NOT the sitter, treat them as the client
-    client = None
-    if not sitter or from_num != sitter["fields"].get("Phone Number"):
-        client = find_client_by_phone(from_num)
-        if client:
-            log_info(f"Matched client: {client['fields'].get('Name', 'Unknown')}")
+                log_error("CRITICAL: No Ready pool numbers available in Inventory!")
+                # Fallback? We can't forward without a masked number.
+                # Increment error count so worker might retry later if pool fills up?
+                increment_client_error_count(client_id)
+                return Response(status_code=status.HTTP_403_FORBIDDEN)
+        
+        # 2c. Link Sitter
+        sitter_name = sitter_recipient["fields"].get("Full Name", "Unknown Sitter")
+        update_client_linked_sitter(client_id, sitter_name)
+        
+        # 2d. Forward Message
+        modified_body = f"[{client_name}]: {Body}"
+        
+        # Save message for audit/retry (Inbound Client->Sitter)
+        # We save the *Forwarded* version so retry worker just executes it blindly
+        msg_id = save_message("Manual", assigned_number, To, modified_body)
+        
+        try:
+            # Send FROM Assigned Pool Number TO Sitter
+            send_sms(from_number=assigned_number, to_number=To, body=modified_body)
+            log_info(f"Forwarded Client -> Sitter: {modified_body}")
             
-            # TTL CHECK: If expired, we "revive" it because they messaged.
-            # We reset the timer by updating last active.
-            if is_ttl_expired(client):
-                log_info(f"Session technically expired (>14 days), but reviving due to new message from {from_num}")
-                log_event("SESSION_REVIVED", f"Client {client.get('id')} messaged after expiry. Resetting TTL.")
+            update_message_status(msg_id, "Sent")
             
-            # Pass sitter["id"] to ensure the 'Linked Sitter' field is maintained
-            update_last_active(client["id"], session_sid, sitter_id=sitter.get("id") if sitter else None)
+            # Return 403 to stop Twilio from processing further
+            return Response(status_code=status.HTTP_403_FORBIDDEN)
+            
+        except Exception as e:
+            log_error(f"Failed to forward Client message", str(e))
+            increment_client_error_count(client_id)
+            # Message Status stays 'Pending' (from save_message default), so Worker will retry
+            return Response(status_code=status.HTTP_403_FORBIDDEN)
 
-    # ---------------------------------------------------------
-    # 4. Save & Prepend (Block & Re-send Strategy)
-    # ---------------------------------------------------------
-    message_record_id = save_message(session_sid, from_num, to_num, body)
-
-    # LOOP PREVENTION: 
-    # If the body already has our prepend marker, it means this is the intercept for 
-    # the manual message we just sent. We return 200 OK to allow it to be logged/active,
-    # but we don't want to modify it or re-trigger another send.
-    if body.startswith("[") and "]:" in body:
-        log_info(f"Intercept triggered for our own modified message: '{body}'. Allowing through.")
-        # Mark the original message as Sent since it has finally arrived
-        update_message_status(message_record_id, "Sent")
-        return {"status": "ok"}
-
-    client_name = "Unknown Client"
-    if client:
-        client_name = client["fields"].get("Name", "Unknown Client")
-    
-    # Check if the sender is the sitter
-    is_sitter_sending = False
-    if sitter and from_num == sitter.get("fields", {}).get("Phone Number"):
-        is_sitter_sending = True
-
-    if is_sitter_sending:
-        log_info("Message is from Sitter, allowing through normally.")
-        return {"body": body}
-    
-    # If we are here, it's a message from a client (or unknown) that needs name prepending.
-    modified_body = f"[{client_name}]: {body}"
-    log_info(f"Triggering Block & Re-send for Client message. Modified: {modified_body}")
-    
-    # Find participants to ensure we have the right Client SID for re-sending
-    # Manually send the message through proxy session
-    # We identify the recipient (Sitter) participant
-    participants = list_participants(session_sid)
-    
-    # Log all for debug
-    log_info(f"Verifying participants for re-send in session {session_sid}...")
-    recipient_p = None
-    for p in participants:
-        log_info(f" - Participant: SID={p.sid}, Phone={p.identifier}, Proxy={p.proxy_identifier}")
-        # The recipient is whoever is NOT the sender (from_num)
-        if p.identifier != from_num:
-            recipient_p = p
-
-    if recipient_p:
-        log_info(f"Targeting recipient {recipient_p.identifier} (SID: {recipient_p.sid}) for modified message.")
-        # IMPORTANT: In Twilio Proxy, creating a MessageInteraction on a participant resource 
-        # sends the message TO that participant.
-        send_session_message(session_sid, recipient_p.sid, modified_body)
-        log_info("Manual message sent via API. Returning 403 to block the original raw message.")
-        # Note: We mark as Sent in the NEXT intercept call (the modified one)
-        # but we can also set a 'Relaying' status here if we want.
-        update_message_status(message_record_id, "Relaying")
-        return Response(status_code=status.HTTP_403_FORBIDDEN)
-    else:
-        log_error("CRITICAL: Could not identify a recipient participant. Falling back to 200.")
-        return {"body": modified_body}
+    # Fallback if neither Sitter nor Client logic matched
+    log_info("Intercept: Message did not match Sitter routing rules.")
+    return {"status": "ignored"}

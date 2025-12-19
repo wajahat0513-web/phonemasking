@@ -1,29 +1,25 @@
 """
-Sessions Router
-================
-This script handles the creation and management of communication sessions between Clients and Sitters.
-
-Key Functionality:
-- Handles the initial "Out of Session" contact when a Client texts a Sitter's proxy number.
-- Creates a new Client record in Airtable if one doesn't exist.
-- Initiates a Twilio Proxy Session to mask real phone numbers.
-- Adds both the Client and Sitter as participants to the secure session.
-- Logs the session creation event in Airtable for auditing.
-
-Endpoints:
-- POST /out-of-session: The entry point for new conversations.
+Sessions Router (Manual Proxy Alignment)
+========================================
+This endpoint now mirrors the manual intercept logic to ensure that 
+"Out of Session" callbacks (first contact) are handled the same way only manual proxying.
+Twilio Sessions are NO LONGER created.
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Request, Response, status
 from services.airtable_client import (
-    find_sitter_by_twilio_number,
-    find_client_by_phone,
     create_or_update_client,
-    update_client_session,
-    log_event,
+    get_ready_pool_number,
+    assign_pool_number_to_client,
+    update_client_linked_sitter,
+    find_sitter_by_twilio_number,
+    increment_client_error_count,
+    save_message,
+    update_message_status,
+    log_event
 )
-from services.twilio_proxy import create_session, add_participant
-from utils.logger import log_info, log_error, log_success
+from services.twilio_proxy import send_sms
+from utils.logger import log_info, log_error
 from utils.request_parser import parse_incoming_payload
 
 router = APIRouter()
@@ -31,128 +27,79 @@ router = APIRouter()
 @router.post("/out-of-session")
 async def out_of_session(request: Request):
     """
-    Handles the initial contact from a Client to a Sitter (Out of Session).
-    
-    This endpoint is triggered by Twilio when a message is sent to a Proxy Number
-    that is not currently part of an active session.
-    
-    Args:
-        From (str): The phone number of the sender (Client).
-        To (str): The Twilio proxy number the message was sent to (assigned to a Sitter).
-        
-    Returns:
-        dict: Status and Session SID on success.
+    Handles the initial contact from a Client to a Sitter.
+    REDIRECTS to Manual Proxy Logic.
     """
-    payload = await parse_incoming_payload(
-        request, required_fields=["From", "To"], optional_fields=[]
-    )
-
-    From = payload["From"]
-    To = payload["To"]
-
-    # Normalize phone numbers to E.164 format (add + if missing)
-    if not From.startswith("+"):
-        From = f"+{From}"
-    if not To.startswith("+"):
-        To = f"+{To}"
+    payload = await parse_incoming_payload(request, required_fields=[])
     
-    log_info(f"Out of session message from {From} to {To}")
-
-    # ---------------------------------------------------------
-    # 1. Lookup Sitter by Twilio Number
-    # ---------------------------------------------------------
-    # We need to identify which Sitter is assigned to the proxy number (To)
-    # that received the message.
-    sitter = find_sitter_by_twilio_number(To)
-    if not sitter:
-        log_error(f"Sitter not found for Twilio number {To}")
-        return {"status": "error", "message": "Sitter not found"}
+    From = payload.get("From", "").strip()
+    To = payload.get("To", "").strip()
+    Body = payload.get("Body", "")
     
-    sitter_id = sitter["id"]
-    sitter_real_phone = sitter["fields"].get("Phone Number")
+    # Normalize
+    if From and not From.startswith("+"): From = f"+{From}"
+    if To and not To.startswith("+"): To = f"+{To}"
 
-    # ---------------------------------------------------------
-    # 2. Lookup or Create Client Record
-    # ---------------------------------------------------------
-    # Check if the sender (From) is already a known Client.
-    # If not, create a new Client record in Airtable.
-    # Uses upsert logic to prevent duplicates if Zap 1 hasn't synced yet.
-    client = find_client_by_phone(From)
-    if not client:
-        client, was_created = create_or_update_client(From)
-        if was_created:
-            log_info(f"Created new shell client record for {From} (will be updated by Zap 1)")
-        else:
-            log_info(f"Found existing client record for {From}")
+    log_info(f"Out-of-Session Triggered: {From} -> {To}. Executing Manual Proxy Logic.")
+
+    # In "Out of Session", the recipient is always the Sitter's Number (To).
+    sitter_recipient = find_sitter_by_twilio_number(To)
     
+    if not sitter_recipient:
+        log_error(f"Sitter not found for {To} in out-of-session.")
+        return Response(status_code=status.HTTP_404_NOT_FOUND)
+
+    # ----------------------------------------------------------------------
+    # MANUAL PROXY LOGIC (Same as Intercept)
+    # ----------------------------------------------------------------------
+    
+    # 1. Find or Create Client
+    client, _ = create_or_update_client(From)
     client_id = client["id"]
-
-    # ---------------------------------------------------------
-    # 3. Create Twilio Proxy Session
-    # ---------------------------------------------------------
-    # Initialize a new Proxy Session in Twilio. This session acts as the
-    # secure bridge that masks phone numbers between participants.
+    client_name = client["fields"].get("Name", "Unknown")
+    client_pool_num = client["fields"].get("twilio-number")
+    
+    # 2. Assign Pool Number if missing
+    assigned_number = client_pool_num
+    if not assigned_number:
+        log_info(f"Client {From} has no pool number. Fetching from inventory...")
+        pool_record = get_ready_pool_number()
+        
+        if pool_record:
+            new_pool_num = pool_record["fields"].get("PhoneNumber") or pool_record["fields"].get("Phone Number")
+            pool_record_id = pool_record["id"]
+            
+            if assign_pool_number_to_client(client_id, pool_record_id, new_pool_num):
+                assigned_number = new_pool_num
+                log_info(f"Assigned new Pool Number {assigned_number} to Client {client_id}")
+            else:
+                log_error("Failed to assign available pool number.")
+        else:
+            log_error("CRITICAL: No Ready pool numbers available!")
+            increment_client_error_count(client_id)
+            return Response(status_code=status.HTTP_403_FORBIDDEN)
+    
+    # 3. Link Sitter
+    sitter_name = sitter_recipient["fields"].get("Full Name", "Unknown Sitter")
+    update_client_linked_sitter(client_id, sitter_name)
+    
+    # 4. Forward Message
+    modified_body = f"[{client_name}]: {Body}"
+    
+    msg_id = save_message("Manual", assigned_number, To, modified_body)
+    
     try:
-        session_sid = create_session(sitter_id, client_id)
+        # Send FROM Assigned Pool Number TO Sitter
+        send_sms(from_number=assigned_number, to_number=To, body=modified_body)
+        log_info(f"Forwarded Client -> Sitter (OOS): {modified_body}")
+        
+        update_message_status(msg_id, "Sent")
+        
+        # Return 403 to satisfy user requirement / stop Twilio
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
+        
     except Exception as e:
-        log_error("Failed to create session", str(e))
-        raise HTTPException(status_code=500, detail="Failed to create session")
-
-    # ---------------------------------------------------------
-    # 4. Add Participants to Session (with Conflict & Concurrency Resolution)
-    # ---------------------------------------------------------
-    async def sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=True, attempt=0):
-        try:
-            from services.twilio_proxy import list_participants, close_session
-            import asyncio
-            
-            existing_ps = list_participants(session_sid)
-            existing_identifiers = [p.identifier for p in existing_ps]
-
-            if sitter_real_phone not in existing_identifiers:
-                add_participant(session_sid, identifier=sitter_real_phone, proxy_identifier=To)
-            
-            if From not in existing_identifiers:
-                add_participant(session_sid, identifier=From, proxy_identifier=To)
-            
-            return True
-        except Exception as e:
-            err_msg = str(e)
-            
-            # CASE 1: 400 - Identifier already in use (Conflict)
-            if "already in use" in err_msg.lower() and "KC" in err_msg and retry:
-                import re
-                match = re.search(r'(KC[a-f0-9]{32})', err_msg)
-                if match:
-                    conflicting_sid = match.group(1)
-                    log_info(f"Detected stuck session {conflicting_sid}. Cleaning up and backing off...")
-                    close_session(conflicting_sid)
-                    
-                    # BACKOFF: Wait for Twilio to release the lock
-                    await asyncio.sleep(2)
-                    return await sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=False)
-
-            # CASE 2: 409 - Duplicate participant request in progress (Concurrency)
-            if "409" in err_msg or "duplicate participant request" in err_msg.lower():
-                if attempt < 2:
-                    log_info(f"409 Concurrency Error. Retrying after 1s backoff (Attempt {attempt+1})...")
-                    await asyncio.sleep(1)
-                    return await sync_participants_safe(session_sid, To, From, sitter_real_phone, retry=True, attempt=attempt+1)
-
-            log_error("Final Participant Sync Failure", err_msg)
-            return False
-
-    if not await sync_participants_safe(session_sid, To, From, sitter_real_phone):
-        raise HTTPException(status_code=500, detail="Failed to sync participants after conflict cleanup and backoff.")
-
-    # ---------------------------------------------------------
-    # 5. Finalize: Update Client Record & Log Success
-    # ---------------------------------------------------------
-    # ONLY update Airtable after we are 100% sure Twilio is ready.
-    # This prevents out-of-sync session IDs in your database.
-    update_client_session(client_id, session_sid, sitter_id=sitter_id)
-
-    log_event("SESSION_CREATED", f"Session {session_sid} created for Sitter {sitter_id} and Client {client_id}")
-    log_success("Session created successfully", f"Session: {session_sid}, Client: {From}, Sitter: {sitter_real_phone}")
-
-    return {"status": "success", "session_sid": session_sid}
+        log_error(f"Failed to forward Client message (OOS)", str(e))
+        increment_client_error_count(client_id)
+        # Status 'Pending', Retry worker will handle
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
