@@ -374,14 +374,23 @@ def update_client_linked_sitter(client_id: str, sitter_name: str):
 def increment_client_error_count(client_id: str):
     """
     Increments the Twilio-Error-Count for a client.
-    Note: Airtable doesn't support atomic increments easily via API, so we read-then-write or just set to 1 if new.
-    For simplicity/robustness in high concurrency, strict counting might be hard, but best effort:
+    Handles 'Twilio-Error-Count' as a String/Text field to avoid 422 errors.
     """
     try:
         client = clients_table.get(client_id)
-        current = client["fields"].get("Twilio-Error-Count", 0)
+        # Get current value, default to "0" (as string) or 0 (if int logic was used locally)
+        raw_val = client["fields"].get("Twilio-Error-Count", "0")
+        
+        # Safely convert to int
+        try:
+            current = int(str(raw_val))
+        except ValueError:
+            current = 0
+            
         new_count = current + 1
-        clients_table.update(client_id, {"Twilio-Error-Count": new_count})
+        
+        # Update as STRING because user confirmed it is a Single Line Text column
+        clients_table.update(client_id, {"Twilio-Error-Count": str(new_count)})
     except Exception as e:
         from utils.logger import log_error
         log_error(f"Failed to increment error count: {str(e)}")
