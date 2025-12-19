@@ -14,6 +14,7 @@ from services.airtable_client import (
     update_client_linked_sitter,
     find_sitter_by_twilio_number,
     find_client_by_twilio_number,
+    find_client_by_phone,
     increment_client_error_count,
     save_message,
     update_message_status,
@@ -85,11 +86,22 @@ async def out_of_session(request: Request):
     if sitter_recipient:
         log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Processing Client message...")
         
-        # 1. Find or Create Client
-        client, _ = create_or_update_client(From)
-        client_id = client["id"]
-        client_name = client["fields"].get("Name", "Unknown")
-        client_pool_num = client["fields"].get("twilio-number")
+        # 1. Find Client explicitly first
+        client = find_client_by_phone(From)
+        
+        if client:
+            client_id = client["id"]
+            client_name = client["fields"].get("Name", "Unknown")
+            client_pool_num = client["fields"].get("twilio-number")
+            log_info(f"Existing Client found (OOS): {client_name}. Checking assigned number...")
+        else:
+            # Not found? Create one to get an ID
+            log_info(f"Client {From} not found (OOS). Creating record...")
+            client, _ = create_or_update_client(From)
+            client_id = client["id"]
+            client_name = client["fields"].get("Name", "Unknown")
+            client_pool_num = None
+            log_info(f"Created new Client record (OOS): {client_id}")
         
         # 2. Assign Pool Number if missing
         assigned_number = client_pool_num

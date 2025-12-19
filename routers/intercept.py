@@ -110,12 +110,22 @@ async def intercept(request: Request):
     if sitter_recipient:
         log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Processing Client message...")
         
-        # 2a. Find or Create Client
-        client, _ = create_or_update_client(From)
-        client_id = client["id"]
-        client_id = client["id"]
-        client_name = client["fields"].get("Name", "Unknown")
-        client_pool_num = client["fields"].get("twilio-number")
+        # 2a. Find Client explicitly first
+        client = find_client_by_phone(From)
+        
+        if client:
+            client_id = client["id"]
+            client_name = client["fields"].get("Name", "Unknown")
+            client_pool_num = client["fields"].get("twilio-number")
+            log_info(f"Existing Client found: {client_name}. Checking assigned number...")
+        else:
+            # Not found? Create one to get an ID
+            log_info(f"Client {From} not found. Creating record...")
+            client, _ = create_or_update_client(From)
+            client_id = client["id"]
+            client_name = client["fields"].get("Name", "Unknown")
+            client_pool_num = None
+            log_info(f"Created new Client record: {client_id}")
         
         # 2b. Assign Pool Number if missing
         assigned_number = client_pool_num
