@@ -73,14 +73,21 @@ async def intercept(request: Request):
             log_info(f"Found linked Client: {client_recipient['fields'].get('Name')} ({client_real_phone})")
             
             try:
-                # Save message for audit/retry (Outbound Sitter->Client)
+                # Save message for audit (Outbound Sitter->Client)
                 msg_id = save_message("Manual", To, client_real_phone, Body)
                 
-                # Forward: From Pool Number (To) -> Client Real Phone
-                send_sms(from_number=To, to_number=client_real_phone, body=Body)
+                # Forward: From Sitter's entry point number -> Client Real Phone
+                sitter_entry_point = sitter_sender["fields"].get("Twilio Number")
+                
+                if not sitter_entry_point:
+                    log_error(f"Sitter {sitter_sender['fields'].get('Full Name')} missing 'Twilio Number' (Entry Point).")
+                    update_message_status(msg_id, "Failed (Missing Sitter Entry Point)")
+                    return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+                send_sms(from_number=sitter_entry_point, to_number=client_real_phone, body=Body)
                 
                 update_message_status(msg_id, "Sent")
-                log_info("Successfully forwarded Sitter -> Client")
+                log_info(f"Successfully forwarded Sitter -> Client using Sitter entry point: {sitter_entry_point}")
                 return Response(status_code=status.HTTP_200_OK)
             except Exception as e:
                 log_error("Failed to forward Sitter reply", str(e))
