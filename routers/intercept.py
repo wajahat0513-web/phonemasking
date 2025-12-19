@@ -132,6 +132,12 @@ async def intercept(request: Request):
         
         # 2c. Link Sitter
         sitter_name = sitter_recipient["fields"].get("Full Name", "Unknown Sitter")
+        sitter_real_phone = sitter_recipient["fields"].get("Phone Number")
+        
+        if not sitter_real_phone:
+            log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding.")
+            return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         update_client_linked_sitter(client_id, sitter_name)
         
         # 2d. Forward Message
@@ -139,12 +145,12 @@ async def intercept(request: Request):
         
         # Save message for audit/retry (Inbound Client->Sitter)
         # We save the *Forwarded* version so retry worker just executes it blindly
-        msg_id = save_message("Manual", assigned_number, To, modified_body)
+        msg_id = save_message("Manual", assigned_number, sitter_real_phone, modified_body)
         
         try:
-            # Send FROM Assigned Pool Number TO Sitter
-            send_sms(from_number=assigned_number, to_number=To, body=modified_body)
-            log_info(f"Forwarded Client -> Sitter: {modified_body}")
+            # Send FROM Assigned Pool Number TO Sitter's REAL Number
+            send_sms(from_number=assigned_number, to_number=sitter_real_phone, body=modified_body)
+            log_info(f"Forwarded Client -> Sitter: {modified_body} to {sitter_real_phone}")
             
             update_message_status(msg_id, "Sent")
             

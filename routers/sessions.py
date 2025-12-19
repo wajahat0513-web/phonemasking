@@ -81,17 +81,23 @@ async def out_of_session(request: Request):
     
     # 3. Link Sitter
     sitter_name = sitter_recipient["fields"].get("Full Name", "Unknown Sitter")
+    sitter_real_phone = sitter_recipient["fields"].get("Phone Number")
+    
+    if not sitter_real_phone:
+        log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding (OOS).")
+        return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     update_client_linked_sitter(client_id, sitter_name)
     
     # 4. Forward Message
     modified_body = f"[{client_name}]: {Body}"
     
-    msg_id = save_message("Manual", assigned_number, To, modified_body)
+    msg_id = save_message("Manual", assigned_number, sitter_real_phone, modified_body)
     
     try:
-        # Send FROM Assigned Pool Number TO Sitter
-        send_sms(from_number=assigned_number, to_number=To, body=modified_body)
-        log_info(f"Forwarded Client -> Sitter (OOS): {modified_body}")
+        # Send FROM Assigned Pool Number TO Sitter's REAL Number
+        send_sms(from_number=assigned_number, to_number=sitter_real_phone, body=modified_body)
+        log_info(f"Forwarded Client -> Sitter (OOS): {modified_body} to {sitter_real_phone}")
         
         update_message_status(msg_id, "Sent")
         
