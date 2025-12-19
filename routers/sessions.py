@@ -57,7 +57,7 @@ async def out_of_session(request: Request):
     client, _ = create_or_update_client(From)
     client_id = client["id"]
     client_name = client["fields"].get("Name", "Unknown")
-    client_pool_num = client["fields"].get("Twilio Number")
+    client_pool_num = client["fields"].get("Twillio-number")
     
     # 2. Assign Pool Number if missing
     assigned_number = client_pool_num
