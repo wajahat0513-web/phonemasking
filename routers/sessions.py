@@ -135,11 +135,21 @@ async def out_of_session(request: Request):
             log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding (OOS).")
             return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # LOOP PREVENTION: If Sitter's handset is the SAME as the number they contacted (To), 
+        # they already received the message. Do not forward to avoid infinite loop.
+        if sitter_real_phone == To:
+            log_info(f"Sitter {sitter_name} handset is same as Entry Point {To} (OOS). Skipping forward to avoid loop.")
+            return Response(status_code=status.HTTP_403_FORBIDDEN)
+
         # Use Record ID for linking
         update_client_linked_sitter(client_id, sitter_recipient["id"])
         
-        # 4. Forward Message
-        modified_body = f"[{client_name}]: {Body}"
+        # 4. Forward Message with Prefix Deduplication
+        prefix = f"[{client_name}]:"
+        if Body.lstrip().startswith(prefix):
+            modified_body = Body
+        else:
+            modified_body = f"{prefix} {Body}"
         msg_id = save_message("Manual", assigned_number, sitter_real_phone, modified_body)
         
         try:

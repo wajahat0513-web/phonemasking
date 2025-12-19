@@ -161,11 +161,21 @@ async def intercept(request: Request):
             log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding.")
             return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        # LOOP PREVENTION: If Sitter's handset is the SAME as the number they contacted (To), 
+        # they already received the message. Do not forward to avoid infinite loop.
+        if sitter_real_phone == To:
+            log_info(f"Sitter {sitter_name} handset is same as Entry Point {To}. Skipping forward to avoid loop.")
+            return Response(status_code=status.HTTP_403_FORBIDDEN)
+
         # Use Record ID for linking, not Name
         update_client_linked_sitter(client_id, sitter_recipient["id"])
         
-        # 2d. Forward Message
-        modified_body = f"[{client_name}]: {Body}"
+        # 2d. Forward Message with Prefix Deduplication
+        prefix = f"[{client_name}]:"
+        if Body.lstrip().startswith(prefix):
+            modified_body = Body
+        else:
+            modified_body = f"{prefix} {Body}"
         
         # Save message for audit/retry (Inbound Client->Sitter)
         # We save the *Forwarded* version so retry worker just executes it blindly

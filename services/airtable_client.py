@@ -330,7 +330,12 @@ def update_message_status(message_id: str, status: str):
         messages_table.update(message_id, {"Status": status})
     except Exception as e:
         from utils.logger import log_error
-        log_error(f"Error updating message status: {str(e)}")
+        # Log specifically if it's a select option error
+        err_str = str(e)
+        if "INVALID_MULTIPLE_CHOICE_OPTIONS" in err_str:
+            log_error(f"Airtable Select Error: Status '{status}' is not a valid option in the Messages table. Please add it to Airtable.")
+        else:
+            log_error(f"Error updating message status: {err_str}")
 
 def get_ready_pool_number():
     """
