@@ -219,7 +219,7 @@ def get_available_numbers():
         numbers = []
         for record in all_numbers:
             fields = record.get("fields", {})
-            phone = fields.get("PhoneNumber") or fields.get("Phone Number")
+            phone = fields.get("phone-number")
             assigned_sitter = fields.get("Assigned Sitter", [])
             
             # Only include records that have a phone number AND are not assigned
@@ -347,7 +347,7 @@ def get_ready_pool_number():
 def assign_pool_number_to_client(client_id: str, number_record_id: str, number_value: str):
     """
     Assigns a pool number to a client and updates the inventory status.
-    Uses 'twilio-number' for the Clients table and 'PhoneNumber' for Inventory source.
+    Uses 'twilio-number' for the Clients table and 'phone-number' for Inventory source.
     """
     try:
         # 1. Update Client with the assigned number (Correct column name: "twilio-number")

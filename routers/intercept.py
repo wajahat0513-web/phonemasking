@@ -124,7 +124,7 @@ async def intercept(request: Request):
             pool_record = get_ready_pool_number()
             
             if pool_record:
-                new_pool_num = pool_record["fields"].get("PhoneNumber") or pool_record["fields"].get("Phone Number")
+                new_pool_num = pool_record["fields"].get("phone-number")
                 pool_record_id = pool_record["id"]
                 
                 if assign_pool_number_to_client(client_id, pool_record_id, new_pool_num):

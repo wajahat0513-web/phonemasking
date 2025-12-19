@@ -117,10 +117,10 @@ async def attach_number(
             if not all_records:
                 detail = "Number Inventory table is empty. Please add phone numbers to the 'Number Inventory' table in Airtable."
             else:
-                # Check if records have phone numbers
-                records_with_phone = [r for r in all_records if r.get("fields", {}).get("PhoneNumber") or r.get("fields", {}).get("Phone Number")]
+                # Check if records have phone-number
+                records_with_phone = [r for r in all_records if r.get("fields", {}).get("phone-number")]
                 if not records_with_phone:
-                    detail = "Number Inventory table has records but none have a phone number field. Please ensure records have 'PhoneNumber' or 'Phone Number' field populated."
+                    detail = "Number Inventory table has records but none have a 'phone-number' field. Please ensure records have 'phone-number' field populated."
                 else:
                     # Check which records are already assigned
                     assigned_count = sum(1 for r in records_with_phone if r.get("fields", {}).get("Assigned Sitter"))
@@ -130,8 +130,8 @@ async def attach_number(
         
         raise HTTPException(status_code=500, detail=detail)
     
-    # Try both field name variations: "PhoneNumber" and "Phone Number"
-    new_number = new_number_record["fields"].get("PhoneNumber") or new_number_record["fields"].get("Phone Number")
+    # Normalized field name: "phone-number"
+    new_number = new_number_record["fields"].get("phone-number")
     if not new_number:
         # Log available fields for debugging
         available_fields = list(new_number_record["fields"].keys())
