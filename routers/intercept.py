@@ -122,10 +122,13 @@ async def intercept(request: Request):
                 if assign_pool_number_to_client(client_id, pool_record_id, new_pool_num):
                     assigned_number = new_pool_num
                     log_info(f"Assigned new Pool Number {assigned_number} to Client {client_id}")
+                    log_event("NUMBER_ASSIGNED", f"Assigned {assigned_number} to Client {client_name}", f"Client ID: {client_id}")
                 else:
                     log_error("Failed to assign available pool number.")
+                    log_event("ASSIGNMENT_ERROR", "Failed to update Client with Pool Number", f"Client ID: {client_id}")
             else:
                 log_error("CRITICAL: No Ready pool numbers available in Inventory!")
+                log_event("POOL_EXHAUSTED", "No Ready numbers found in Inventory", f"Client: {From}")
                 # Fallback? We can't forward without a masked number.
                 # Increment error count so worker might retry later if pool fills up?
                 increment_client_error_count(client_id)
@@ -161,6 +164,7 @@ async def intercept(request: Request):
             
         except Exception as e:
             log_error(f"Failed to forward Client message", str(e))
+            log_event("FORWARD_ERROR", f"Failed to forward message from {From}", str(e))
             increment_client_error_count(client_id)
             # Message Status stays 'Pending' (from save_message default), so Worker will retry
             return Response(status_code=status.HTTP_403_FORBIDDEN)
