@@ -69,7 +69,7 @@ async def intercept(request: Request):
         client_recipient = find_client_by_twilio_number(To)
         
         if client_recipient:
-            client_real_phone = client_recipient["fields"].get("Phone Number")
+            client_real_phone = client_recipient["fields"].get("phone-number")
             log_info(f"Found linked Client: {client_recipient['fields'].get('Name')} ({client_real_phone})")
             
             try:
@@ -77,11 +77,11 @@ async def intercept(request: Request):
                 msg_id = save_message("Manual", To, client_real_phone, Body)
                 
                 # Forward: From Sitter's entry point number -> Client Real Phone
-                # User specified "Phone-Number" as the correct column name
-                sitter_entry_point = sitter_sender["fields"].get("Phone-Number") or sitter_sender["fields"].get("Twilio Number")
+                # User specified normalized column name "twilio-number"
+                sitter_entry_point = sitter_sender["fields"].get("twilio-number")
                 
                 if not sitter_entry_point:
-                    log_error(f"Sitter {sitter_sender['fields'].get('Full Name')} missing entry point number (checked Phone-Number and Twilio Number).")
+                    log_error(f"Sitter {sitter_sender['fields'].get('Full Name')} missing entry point number (checked twilio-number).")
                     update_message_status(msg_id, "Failed (Missing Sitter Entry Point)")
                     return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -115,7 +115,7 @@ async def intercept(request: Request):
         client_id = client["id"]
         client_id = client["id"]
         client_name = client["fields"].get("Name", "Unknown")
-        client_pool_num = client["fields"].get("Twillio-number")
+        client_pool_num = client["fields"].get("twilio-number")
         
         # 2b. Assign Pool Number if missing
         assigned_number = client_pool_num
@@ -144,7 +144,7 @@ async def intercept(request: Request):
         
         # 2c. Link Sitter
         sitter_name = sitter_recipient["fields"].get("Full Name", "Unknown Sitter")
-        sitter_real_phone = sitter_recipient["fields"].get("Phone Number")
+        sitter_real_phone = sitter_recipient["fields"].get("phone-number")
         
         if not sitter_real_phone:
             log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding.")

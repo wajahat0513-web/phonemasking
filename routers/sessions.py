@@ -57,7 +57,7 @@ async def out_of_session(request: Request):
     client, _ = create_or_update_client(From)
     client_id = client["id"]
     client_name = client["fields"].get("Name", "Unknown")
-    client_pool_num = client["fields"].get("Twillio-number")
+    client_pool_num = client["fields"].get("twilio-number")
     
     # 2. Assign Pool Number if missing
     assigned_number = client_pool_num
@@ -84,7 +84,7 @@ async def out_of_session(request: Request):
     
     # 3. Link Sitter
     sitter_name = sitter_recipient["fields"].get("Full Name", "Unknown Sitter")
-    sitter_real_phone = sitter_recipient["fields"].get("Phone Number")
+    sitter_real_phone = sitter_recipient["fields"].get("phone-number")
     
     if not sitter_real_phone:
         log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding (OOS).")

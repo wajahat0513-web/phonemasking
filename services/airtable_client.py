@@ -39,14 +39,12 @@ def find_sitter_by_twilio_number(twilio_number: str):
     # Get 10-digit version if it's 11 digits starting with 1
     ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
     
-    # Check Phone-Number, Twilio Number, and Phone Number
+    # Normalized names: phone-number and twilio-number
     formula = f"OR(" \
-              f"SEARCH('{ten_digit}', {{Phone-Number}}), " \
-              f"SEARCH('{ten_digit}', {{Twilio Number}}), " \
-              f"SEARCH('{ten_digit}', {{Phone Number}}), " \
-              f"{{Phone-Number}} = '{twilio_number}', " \
-              f"{{Twilio Number}} = '{twilio_number}', " \
-              f"{{Phone Number}} = '{twilio_number}'" \
+              f"SEARCH('{ten_digit}', {{twilio-number}}), " \
+              f"SEARCH('{ten_digit}', {{phone-number}}), " \
+              f"{{twilio-number}} = '{twilio_number}', " \
+              f"{{phone-number}} = '{twilio_number}'" \
               f")"
     
     try:
@@ -82,10 +80,10 @@ def find_client_by_phone(phone_number: str):
     clean_num = "".join(filter(str.isdigit, phone_number))
     ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
 
-    # Check primary Phone Number field
+    # Check primary phone-number field
     formula = f"OR(" \
-              f"SEARCH('{ten_digit}', {{Phone Number}}), " \
-              f"{{Phone Number}} = '{phone_number}'" \
+              f"SEARCH('{ten_digit}', {{phone-number}}), " \
+              f"{{phone-number}} = '{phone_number}'" \
               f")"
     
     try:
@@ -125,7 +123,7 @@ def create_or_update_client(phone_number: str, name: str = "Unknown", **kwargs):
     else:
         # Create new record
         create_fields = {
-            "Phone Number": phone_number,
+            "phone-number": phone_number,
             "Name": name,
             "Created At": datetime.utcnow().isoformat()
         }
@@ -349,11 +347,11 @@ def get_ready_pool_number():
 def assign_pool_number_to_client(client_id: str, number_record_id: str, number_value: str):
     """
     Assigns a pool number to a client and updates the inventory status.
-    Uses 'Twillio-number' (double 'l') for the Clients table and 'PhoneNumber' for Inventory source.
+    Uses 'twilio-number' for the Clients table and 'PhoneNumber' for Inventory source.
     """
     try:
-        # 1. Update Client with the assigned number (Correct column name: "Twillio-number")
-        clients_table.update(client_id, {"Twillio-number": number_value})
+        # 1. Update Client with the assigned number (Correct column name: "twilio-number")
+        clients_table.update(client_id, {"twilio-number": number_value})
         
         # 2. Update Inventory to mark as Assigned (Status='Assigned')
         inventory_table.update(number_record_id, {"Status": "Assigned"})
@@ -410,8 +408,8 @@ def find_client_by_twilio_number(twilio_number: str):
     if not twilio_number:
         return None
     
-    # Formula: {Twillio-number} = 'number'
-    formula = f"{{Twillio-number}} = '{twilio_number}'"
+    # Formula: {twilio-number} = 'number'
+    formula = f"{{twilio-number}} = '{twilio_number}'"
     try:
         records = clients_table.all(formula=formula)
         return records[0] if records else None
