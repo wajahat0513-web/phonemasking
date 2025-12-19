@@ -108,9 +108,10 @@ async def intercept(request: Request):
     sitter_recipient = find_sitter_by_twilio_number(To)
     
     if sitter_recipient:
-        log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Processing Client message...")
+        log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Identifying Client Handset...")
         
-        # 2a. Find Client explicitly first
+        # 2a. Find Client explicitly by Handset (From)
+        log_info(f"Handset identification: querying for Sender={From}")
         client = find_client_by_phone(From)
         
         if client:

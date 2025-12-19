@@ -84,9 +84,10 @@ async def out_of_session(request: Request):
     sitter_recipient = find_sitter_by_twilio_number(To)
     
     if sitter_recipient:
-        log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Processing Client message...")
+        log_info(f"Recipient is Sitter {sitter_recipient['fields'].get('Full Name')}. Identifying Client Handset...")
         
-        # 1. Find Client explicitly first
+        # 1. Find Client explicitly by Handset (From)
+        log_info(f"Handset identification: querying for Sender={From}")
         client = find_client_by_phone(From)
         
         if client:
