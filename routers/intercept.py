@@ -77,10 +77,11 @@ async def intercept(request: Request):
                 msg_id = save_message("Manual", To, client_real_phone, Body)
                 
                 # Forward: From Sitter's entry point number -> Client Real Phone
-                sitter_entry_point = sitter_sender["fields"].get("Twilio Number")
+                # User specified "Phone-Number" as the correct column name
+                sitter_entry_point = sitter_sender["fields"].get("Phone-Number") or sitter_sender["fields"].get("Twilio Number")
                 
                 if not sitter_entry_point:
-                    log_error(f"Sitter {sitter_sender['fields'].get('Full Name')} missing 'Twilio Number' (Entry Point).")
+                    log_error(f"Sitter {sitter_sender['fields'].get('Full Name')} missing entry point number (checked Phone-Number and Twilio Number).")
                     update_message_status(msg_id, "Failed (Missing Sitter Entry Point)")
                     return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

@@ -39,11 +39,12 @@ def find_sitter_by_twilio_number(twilio_number: str):
     # Get 10-digit version if it's 11 digits starting with 1
     ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
     
-    # Check Twilio Number and Phone Number
-    # We use SEARCH on the ten-digit version to be most flexible
+    # Check Phone-Number, Twilio Number, and Phone Number
     formula = f"OR(" \
+              f"SEARCH('{ten_digit}', {{Phone-Number}}), " \
               f"SEARCH('{ten_digit}', {{Twilio Number}}), " \
               f"SEARCH('{ten_digit}', {{Phone Number}}), " \
+              f"{{Phone-Number}} = '{twilio_number}', " \
               f"{{Twilio Number}} = '{twilio_number}', " \
               f"{{Phone Number}} = '{twilio_number}'" \
               f")"
