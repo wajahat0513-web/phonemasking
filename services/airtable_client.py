@@ -334,7 +334,7 @@ def get_ready_pool_number():
     Fetches a number from inventory with Lifecycle='pool' and Status='Ready'.
     """
     try:
-        # Formula: AND(Lifecycle='Pool', Status='Ready') -- Capitalized 'Pool' based on user data
+        # Formula: AND(Lifecycle='Pool', Status='Ready')
         formula = "AND({Lifecycle}='Pool', {Status}='Ready')"
         records = inventory_table.all(formula=formula)
         return records[0] if records else None
@@ -346,10 +346,11 @@ def get_ready_pool_number():
 def assign_pool_number_to_client(client_id: str, number_record_id: str, number_value: str):
     """
     Assigns a pool number to a client and updates the inventory status.
+    Uses 'Twillio-number' (double 'l') for the Clients table and 'PhoneNumber' for Inventory source.
     """
     try:
-        # 1. Update Client with the assigned number (Correct column name: "Twilio Number")
-        clients_table.update(client_id, {"Twilio Number": number_value})
+        # 1. Update Client with the assigned number (Correct column name: "Twillio-number")
+        clients_table.update(client_id, {"Twillio-number": number_value})
         
         # 2. Update Inventory to mark as Assigned (Status='Assigned')
         inventory_table.update(number_record_id, {"Status": "Assigned"})
@@ -361,11 +362,12 @@ def assign_pool_number_to_client(client_id: str, number_record_id: str, number_v
 
 def update_client_linked_sitter(client_id: str, sitter_record_id: str):
     """
-    Updates the Linked Sitter field for a client.
-    Note: Link fields require an ARRAY of Record IDs.
+    Updates the Linked-Sitter field for a client.
+    Note: Link fields require an ARRAY of Record IDs. 
+    Using 'Linked-Sitter' (hyphenated) as most likely candidate based on previous logs/errors.
     """
     try:
-        clients_table.update(client_id, {"Linked Sitter": [sitter_record_id]})
+        clients_table.update(client_id, {"Linked-Sitter": [sitter_record_id]})
         return True
     except Exception as e:
         from utils.logger import log_error
@@ -403,8 +405,8 @@ def find_client_by_twilio_number(twilio_number: str):
     if not twilio_number:
         return None
     
-    # Formula: {Twilio Number} = 'number'
-    formula = f"{{Twilio Number}} = '{twilio_number}'"
+    # Formula: {Twillio-number} = 'number'
+    formula = f"{{Twillio-number}} = '{twilio_number}'"
     try:
         records = clients_table.all(formula=formula)
         return records[0] if records else None
