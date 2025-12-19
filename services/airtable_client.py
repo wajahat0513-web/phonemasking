@@ -319,7 +319,15 @@ def get_pending_messages(older_than_minutes: int = 5):
     formula = f"AND({{Status}} = 'Pending', IS_BEFORE({{Timestamp}}, '{cutoff.isoformat()}'))"
     return messages_table.all(formula=formula)
 
-    messages_table.update(message_id, {"Status": status})
+def update_message_status(message_id: str, status: str):
+    """
+    Updates the delivery status of a message.
+    """
+    try:
+        messages_table.update(message_id, {"Status": status})
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error updating message status: {str(e)}")
 
 def get_ready_pool_number():
     """
