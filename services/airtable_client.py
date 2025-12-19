@@ -80,10 +80,12 @@ def find_client_by_phone(phone_number: str):
     clean_num = "".join(filter(str.isdigit, phone_number))
     ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
 
-    # Check primary phone-number field
+    # Check both phone-number and twilio-number fields for robustness
     formula = f"OR(" \
               f"SEARCH('{ten_digit}', {{phone-number}}), " \
-              f"{{phone-number}} = '{phone_number}'" \
+              f"SEARCH('{ten_digit}', {{twilio-number}}), " \
+              f"{{phone-number}} = '{phone_number}', " \
+              f"{{twilio-number}} = '{phone_number}'" \
               f")"
     
     try:
@@ -408,8 +410,15 @@ def find_client_by_twilio_number(twilio_number: str):
     if not twilio_number:
         return None
     
-    # Formula: {twilio-number} = 'number'
-    formula = f"{{twilio-number}} = '{twilio_number}'"
+    # Clean input: keep only digits
+    clean_num = "".join(filter(str.isdigit, twilio_number))
+    ten_digit = clean_num[-10:] if len(clean_num) >= 10 else clean_num
+
+    # Formula: {twilio-number} = 'number' or SEARCH for robustness
+    formula = f"OR(" \
+              f"{{twilio-number}} = '{twilio_number}', " \
+              f"SEARCH('{ten_digit}', {{twilio-number}})" \
+              f")"
     try:
         records = clients_table.all(formula=formula)
         return records[0] if records else None
