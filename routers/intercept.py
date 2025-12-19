@@ -105,8 +105,9 @@ async def intercept(request: Request):
         # 2a. Find or Create Client
         client, _ = create_or_update_client(From)
         client_id = client["id"]
+        client_id = client["id"]
         client_name = client["fields"].get("Name", "Unknown")
-        client_pool_num = client["fields"].get("twilio-number")
+        client_pool_num = client["fields"].get("Twilio Number")
         
         # 2b. Assign Pool Number if missing
         assigned_number = client_pool_num
@@ -138,7 +139,8 @@ async def intercept(request: Request):
             log_error(f"Sitter {sitter_name} has no real Phone Number for forwarding.")
             return Response(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        update_client_linked_sitter(client_id, sitter_name)
+        # Use Record ID for linking, not Name
+        update_client_linked_sitter(client_id, sitter_recipient["id"])
         
         # 2d. Forward Message
         modified_body = f"[{client_name}]: {Body}"
