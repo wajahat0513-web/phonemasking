@@ -169,40 +169,39 @@ def update_client_session(client_id: str, session_sid: str, sitter_id: str = Non
 def save_message(session_sid: str, from_number: str, to_number: str, body: str, intercepted: bool = False):
     """
     Logs a message to the Messages table.
-    
-    Args:
-        session_sid (str): The ID of the session the message belongs to.
-        from_number (str): The sender's phone number.
-        to_number (str): The recipient's phone number.
-        body (str): The content of the message.
+    Wrapped in try-except to prevent logging failures from blocking message delivery.
     """
-    record = messages_table.create({
-        "Session SID": session_sid,
-        "From": from_number,
-        "To": to_number,
-        "Body": body,
-        "Timestamp": datetime.utcnow().isoformat(),
-        "Status": "Pending"
-    })
-    return record.get("id")
+    try:
+        record = messages_table.create({
+            "Session SID": session_sid,
+            "From": from_number,
+            "To": to_number,
+            "Body": body,
+            "Timestamp": datetime.utcnow().isoformat(),
+            "Status": "Pending"
+        })
+        return record.get("id")
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Failed to log message to Airtable: {str(e)}")
+        return None
 
 def log_event(event_type: str, description: str, details: str = ""):
     """
     Logs a system event to the Audit Log table.
-    
-    Args:
-        event_type (str): Category of the event (e.g., SESSION_CREATED).
-        description (str): Human-readable description of what happened.
-        details (str): Additional technical details or JSON dump.
+    Wrapped in try-except to prevent logging failures from blocking the main flow.
     """
-    # Field name in Airtable API is "Event" (UI shows "A Event" but API uses "Event")
-    # The error suggests Railway may have old code using "Event Type" - this is the correct field name
-    audit_table.create({
-        "Event": event_type,
-        "Description": description,
-        "Details": details,
-        "Timestamp": datetime.utcnow().isoformat()
-    })
+    try:
+        audit_table.create({
+            "Event": event_type,
+            "Description": description,
+            "Details": details,
+            "Timestamp": datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        from utils.logger import log_error
+        # Use log_error but don't re-raise. We want the app to stay alive.
+        log_error(f"Failed to log audit event Type: {event_type} | Description: {description} | Error: {str(e)}")
 
 def get_available_numbers():
     """
@@ -323,6 +322,9 @@ def update_message_status(message_id: str, status: str):
     """
     Updates the delivery status of a message.
     """
+    if not message_id:
+        return # Skip if message logging failed previously
+        
     try:
         messages_table.update(message_id, {"Status": status})
     except Exception as e:
