@@ -334,8 +334,8 @@ def get_ready_pool_number():
     Fetches a number from inventory with Lifecycle='pool' and Status='Ready'.
     """
     try:
-        # Formula: AND(Lifecycle='pool', Status='Ready')
-        formula = "AND({Lifecycle}='pool', {Status}='Ready')"
+        # Formula: AND(Lifecycle='Pool', Status='Ready') -- Capitalized 'Pool' based on user data
+        formula = "AND({Lifecycle}='Pool', {Status}='Ready')"
         records = inventory_table.all(formula=formula)
         return records[0] if records else None
     except Exception as e:
