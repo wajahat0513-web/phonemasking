@@ -20,13 +20,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy only necessary application files (excludes files in .dockerignore)
 COPY . .
 
-# Make startup scripts executable
-RUN chmod +x start.py start.sh
-
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
 
-# Use CMD with shell form to allow Railway overrides, but default to our Python script
-# Railway can override this, but if they use uvicorn directly, main.py will handle PORT
-CMD ["python", "start.py"]
+# Use CMD to run the main FastAPI application
+CMD ["python", "main.py"]
 
