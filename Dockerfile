@@ -20,9 +20,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy only necessary application files (excludes files in .dockerignore)
 COPY . .
 
+# Make startup scripts executable
+RUN chmod +x start.py start.sh
+
 # Expose port (Railway will set PORT env var)
 EXPOSE 8080
 
-# Use CMD to run the main FastAPI application
-CMD ["python", "main.py"]
+# Use CMD with shell form to allow Railway overrides
+CMD ["python", "start.py"]
 
