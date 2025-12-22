@@ -170,12 +170,12 @@ async def intercept(request: Request):
         # Use Record ID for linking, not Name
         update_client_linked_sitter(client_id, sitter_recipient["id"])
         
-        # 2d. Forward Message with Prefix Deduplication
-        prefix = f"[{client_name}]:"
-        if Body.lstrip().startswith(prefix):
+        # 2d. Forward Message with Suffix (requested by user)
+        suffix = f" - [{client_name}]"
+        if Body.rstrip().endswith(suffix):
             modified_body = Body
         else:
-            modified_body = f"{prefix} {Body}"
+            modified_body = f"{Body}{suffix}"
         
         # Save message for audit/retry (Inbound Client->Sitter)
         # We save the *Forwarded* version so retry worker just executes it blindly
