@@ -434,3 +434,48 @@ def find_client_by_twilio_number(twilio_number: str):
         from utils.logger import log_error
         log_error(f"Error finding client by pool number: {str(e)}")
         return None
+def get_assigned_clients():
+    """
+    Retrieves all Client records that currently have an assigned pool number.
+    """
+    try:
+        formula = "NOT({twilio-number} = '')"
+        return clients_table.all(formula=formula)
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error fetching assigned clients: {str(e)}")
+        return []
+
+def find_inventory_record_by_number(phone_number: str):
+    """
+    Finds the inventory record ID for a specific phone number.
+    """
+    if not phone_number:
+        return None
+    
+    formula = f"{{phone-number}} = '{phone_number}'"
+    try:
+        records = inventory_table.all(formula=formula)
+        return records[0] if records else None
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Error finding inventory record for {phone_number}: {str(e)}")
+        return None
+
+def deallocate_client(client_id: str, inventory_record_id: str):
+    """
+    Clears the assigned pool number from a client and marks the inventory record as Ready.
+    """
+    try:
+        # 1. Clear twilio-number from Client
+        # We also clear Last Active to avoid re-triggering deallocation logic if not needed,
+        # but the user might want to keep it. However, clearing twilio-number is the main goal.
+        clients_table.update(client_id, {"twilio-number": ""})
+        
+        # 2. Mark Inventory record as Ready
+        inventory_table.update(inventory_record_id, {"Status": "Ready"})
+        return True
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Failed to deallocate client {client_id}: {str(e)}")
+        return False
