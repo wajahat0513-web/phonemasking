@@ -1,6 +1,7 @@
 
 import os
 import sys
+import asyncio
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -74,9 +75,21 @@ def check_and_deallocate():
 
     log_info(f"Check complete. Deallocated {deallocated_count} numbers.")
 
+async def async_run_worker():
+    """ Runs the check every hour asynchronously. """
+    log_info("Deallocation Background Worker Started. Checking every hour.")
+    while True:
+        try:
+            check_and_deallocate()
+        except Exception as e:
+            log_error("Deallocation Worker encountered an error", str(e))
+        
+        # Sleep for 1 hour
+        await asyncio.sleep(3600)
+
 def run_worker():
-    """ Runs the check every hour. """
-    log_info("Deallocation Worker Started. Checking every hour.")
+    """ Runs the check every hour (Synchronous version). """
+    log_info("Deallocation Worker Started (Sync). Checking every hour.")
     while True:
         try:
             check_and_deallocate()

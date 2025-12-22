@@ -15,7 +15,11 @@ async def startup_event():
     log_info("Starting Phone Masking Service")
     log_info(f"Loaded configuration for environment: {settings.AIRTABLE_BASE_ID}")
     
-    # Background retry worker removed per user request
+    # Start Automated Deallocation Worker in background
+    from services.deallocate_worker import async_run_worker
+    import asyncio
+    asyncio.create_task(async_run_worker())
+    log_info("Automated 14-day deallocation worker queued in background.")
 
 @app.get("/")
 async def root():
