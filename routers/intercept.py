@@ -167,8 +167,8 @@ async def intercept(request: Request):
             log_info(f"Sitter {sitter_name} handset is same as Entry Point {To}. Skipping forward to avoid loop.")
             return Response(status_code=status.HTTP_403_FORBIDDEN)
 
-        # Use Record ID for linking, not Name
-        update_client_linked_sitter(client_id, sitter_recipient["id"])
+        # Use Sitter Name for linking, not Record ID
+        update_client_linked_sitter(client_id, sitter_name)
         
         # 2d. Forward Message with Suffix (requested by user)
         suffix = f" - [{client_name}]"

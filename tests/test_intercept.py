@@ -59,6 +59,8 @@ with patch('services.airtable_client.find_sitter_by_twilio_number') as mock_find
         assert kwargs['from_number'] == "+1pool"
         assert kwargs['to_number'] == "+1sitter_real"
         assert kwargs['body'] == "Hello there - [John Client]"
+        # Verify Sitter Link (Should be Name, not ID)
+        mock_link_sitter.assert_called_once_with("recClient", "Jane Sitter")
         print("SUCCESS: Inbound routing and suffix verified.")
 
     async def test_outbound_flow():

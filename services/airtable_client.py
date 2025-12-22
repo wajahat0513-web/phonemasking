@@ -371,16 +371,16 @@ def assign_pool_number_to_client(client_id: str, number_record_id: str, number_v
         log_error(f"Failed to assign pool number: {str(e)}")
         return False
 
-def update_client_linked_sitter(client_id: str, sitter_record_id: str):
+def update_client_linked_sitter(client_id: str, sitter_value: str):
     """
-    Updates the Linked-Sitter field for a client.
+    Updates the Linked-Sitter field for a client with the Sitter's Name or ID.
     Changed to send as a STRING to be compatible with both Text and Link fields 
     (Airtable API handles single-record ID strings for links in many cases, 
     but strictly requires lists for multiple. For text fields, lists fail).
     """
     try:
-        # We use the Sitter Record ID
-        clients_table.update(client_id, {"Linked-Sitter": sitter_record_id})
+        # We use the Sitter Name (or ID)
+        clients_table.update(client_id, {"Linked-Sitter": sitter_value})
         return True
     except Exception as e:
         from utils.logger import log_error
