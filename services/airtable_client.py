@@ -357,8 +357,11 @@ def assign_pool_number_to_client(client_id: str, number_record_id: str, number_v
     Uses 'twilio-number' for the Clients table and 'phone-number' for Inventory source.
     """
     try:
-        # 1. Update Client with the assigned number (Correct column name: "twilio-number")
-        clients_table.update(client_id, {"twilio-number": number_value})
+        # 1. Update Client with the assigned number and timestamp (Correct column name: "twilio-number")
+        clients_table.update(client_id, {
+            "twilio-number": number_value,
+            "Last Active": datetime.utcnow().isoformat()
+        })
         
         # 2. Update Inventory to mark as Assigned (Status='Assigned')
         inventory_table.update(number_record_id, {"Status": "Assigned"})

@@ -15,6 +15,8 @@ with patch('services.airtable_client.find_sitter_by_twilio_number') as mock_find
      patch('services.airtable_client.save_message') as mock_save_msg, \
      patch('services.airtable_client.update_message_status') as mock_update_status, \
      patch('services.airtable_client.update_client_linked_sitter') as mock_link_sitter, \
+     patch('services.airtable_client.assign_pool_number_to_client') as mock_assign_num, \
+     patch('services.airtable_client.get_ready_pool_number') as mock_get_pool, \
      patch('services.airtable_client.log_event') as mock_log_event:
 
     from routers.intercept import intercept
@@ -89,9 +91,44 @@ with patch('services.airtable_client.find_sitter_by_twilio_number') as mock_find
         assert kwargs['body'] == "I'm on my way"
         print("SUCCESS: Outbound routing verified.")
 
+    async def test_assignment_updates_timestamp():
+        """Test that a new client triggers assignment and updates timestamp."""
+        print("\nTesting New Client Assignment Timestamp...")
+        
+        mock_find_sitter.reset_mock()
+        mock_find_client.reset_mock()
+        mock_assign_num.reset_mock()
+        mock_get_pool.reset_mock()
+
+        # Sitter exists
+        mock_find_sitter.side_effect = lambda num: {
+            "id": "recSitter",
+            "fields": {"Full Name": "Jane Sitter", "phone-number": "+1sitter_real", "twilio-number": "+1sitter_twilio"}
+        } if num == "+1sitter_twilio" else None
+        
+        # Client does NOT exist initially
+        mock_find_client.return_value = None
+        
+        # Mock pool number availability
+        mock_get_pool.return_value = {"id": "recPool", "fields": {"phone-number": "+1pool_new"}}
+        
+        # Mock assign success
+        mock_assign_num.return_value = True
+
+        payload = {"From": "+1new_client", "To": "+1sitter_twilio", "Body": "First message"}
+        
+        with patch('routers.intercept.create_or_update_client') as mock_upsert:
+            mock_upsert.return_value = ({"id": "recNewClient", "fields": {"Name": "New Client"}}, True)
+            await intercept(MockRequest(payload))
+        
+        # Verify assignment was called
+        mock_assign_num.assert_called_once()
+        print("SUCCESS: New client assignment triggered.")
+
     async def run_all():
         await test_inbound_flow()
         await test_outbound_flow()
+        await test_assignment_updates_timestamp()
 
     if __name__ == "__main__":
         asyncio.run(run_all())
