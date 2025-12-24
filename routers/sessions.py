@@ -106,6 +106,7 @@ async def out_of_session(request: Request):
         
         # 2. Assign Pool Number if missing
         assigned_number = client_pool_num
+        is_new_assignment = False
         if not assigned_number:
             log_info(f"Client {From} has no pool number. Fetching from inventory...")
             pool_record = get_ready_pool_number()
@@ -116,6 +117,7 @@ async def out_of_session(request: Request):
                 
                 if assign_pool_number_to_client(client_id, pool_record_id, new_pool_num):
                     assigned_number = new_pool_num
+                    is_new_assignment = True
                     log_info(f"Assigned new Pool Number {assigned_number} to Client {client_id}")
                     log_event("NUMBER_ASSIGNED", f"Assigned {assigned_number} to Client {client_name}", f"Client ID: {client_id}")
                 else:
@@ -144,12 +146,16 @@ async def out_of_session(request: Request):
         # Use Record ID for linking
         update_client_linked_sitter(client_id, sitter_recipient["id"])
         
-        # 4. Forward Message with Prefix Deduplication
-        prefix = f"[{client_name}]:"
-        if Body.lstrip().startswith(prefix):
-            modified_body = Body
+        # 4. Forward Message with Suffix (requested by user)
+        # Only append suffix if this is the first message (new number assignment)
+        if is_new_assignment:
+            suffix = f" From {client_name} :"
+            if not Body.rstrip().endswith(suffix):
+                modified_body = f"{Body}{suffix}"
+            else:
+                modified_body = Body
         else:
-            modified_body = f"{prefix} {Body}"
+            modified_body = Body
         msg_id = save_message("Manual", assigned_number, sitter_real_phone, modified_body)
         
         try:

@@ -130,6 +130,7 @@ async def intercept(request: Request):
         
         # 2b. Assign Pool Number if missing
         assigned_number = client_pool_num
+        is_new_assignment = False
         if not assigned_number:
             log_info(f"Client {From} has no pool number. Fetching from inventory...")
             pool_record = get_ready_pool_number()
@@ -140,6 +141,7 @@ async def intercept(request: Request):
                 
                 if assign_pool_number_to_client(client_id, pool_record_id, new_pool_num):
                     assigned_number = new_pool_num
+                    is_new_assignment = True
                     log_info(f"Assigned new Pool Number {assigned_number} to Client {client_id}")
                     log_event("NUMBER_ASSIGNED", f"Assigned {assigned_number} to Client {client_name}", f"Client ID: {client_id}")
                 else:
@@ -171,11 +173,15 @@ async def intercept(request: Request):
         update_client_linked_sitter(client_id, sitter_name)
         
         # 2d. Forward Message with Suffix (requested by user)
-        suffix = f" - [{client_name}]"
-        if Body.rstrip().endswith(suffix):
-            modified_body = Body
+        # Only append suffix if this is the first message (new number assignment)
+        if is_new_assignment:
+            suffix = f" From {client_name} :"
+            if not Body.rstrip().endswith(suffix):
+                modified_body = f"{Body}{suffix}"
+            else:
+                modified_body = Body
         else:
-            modified_body = f"{Body}{suffix}"
+            modified_body = Body
         
         # Save message for audit/retry (Inbound Client->Sitter)
         # We save the *Forwarded* version so retry worker just executes it blindly

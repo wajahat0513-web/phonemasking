@@ -58,7 +58,7 @@ with patch('services.airtable_client.find_sitter_by_twilio_number') as mock_find
         _, kwargs = mock_send_sms.call_args
         assert kwargs['from_number'] == "+1pool"
         assert kwargs['to_number'] == "+1sitter_real"
-        assert kwargs['body'] == "Hello there - [John Client]"
+        assert kwargs['body'] == "Hello there"
         # Verify Sitter Link (Should be Name, not ID)
         mock_link_sitter.assert_called_once_with("recClient", "Jane Sitter")
         print("SUCCESS: Inbound routing and suffix verified.")
@@ -125,7 +125,11 @@ with patch('services.airtable_client.find_sitter_by_twilio_number') as mock_find
         
         # Verify assignment was called
         mock_assign_num.assert_called_once()
-        print("SUCCESS: New client assignment triggered.")
+        
+        # Verify suffix was appended for new assignment
+        _, kwargs = mock_send_sms.call_args
+        assert kwargs['body'] == "First message From New Client :"
+        print("SUCCESS: New client assignment triggered and suffix verified.")
 
     async def run_all():
         await test_inbound_flow()
