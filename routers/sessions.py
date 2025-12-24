@@ -146,12 +146,12 @@ async def out_of_session(request: Request):
         # Use Record ID for linking
         update_client_linked_sitter(client_id, sitter_recipient["id"])
         
-        # 4. Forward Message with Suffix (requested by user)
-        # Only append suffix if this is the first message (new number assignment)
+        # 4. Forward Message with Prefix (requested by user)
+        # Only prepend prefix if this is the first message (new number assignment)
         if is_new_assignment:
-            suffix = f" From {client_name} :"
-            if not Body.rstrip().endswith(suffix):
-                modified_body = f"{Body}{suffix}"
+            prefix = f"From {client_name} : "
+            if not Body.lstrip().startswith(prefix):
+                modified_body = f"{prefix}{Body}"
             else:
                 modified_body = Body
         else:
