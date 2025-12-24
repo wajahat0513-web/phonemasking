@@ -150,8 +150,8 @@ The application relies on the following Airtable structure. Ensure your Base mat
 *   **Primary Field**: `Full Name` (Single line text)
 *   **Fields**:
     *   `Status` (Single select: Active, Inactive, Reserved Active)
-    *   `Phone Number` (Single line text)
-    *   `Twilio Number` (Phone number)
+    *   `phone-number` (Single line text)
+    *   `twilio-number` (Phone number)
     *   `Date Added` (Date)
     *   `Messages` (Linked to [Messages])
     *   `Label` (Single line text)
@@ -166,21 +166,22 @@ The application relies on the following Airtable structure. Ensure your Base mat
 ### 2. Clients
 *   **Primary Field**: `Name` (Single line text)
 *   **Fields**:
-    *   `Phone Number` (Single line text)
-    *   `Linked Sitter` (Linked to [Sitters])
+    *   `phone-number` (Single line text)
+    *   `Linked-Sitter` (Linked to [Sitters])
     *   `Last Active` (Date)
     *   `Session SID` (Single line text)
     *   `Created At` (Date)
     *   `Email` (Single line text)
     *   `Created (Airtable)` (Date - Formula)
-    *   `Twilio Error Count` (Number - Integer)
+    *   `Twilio-Error-Count` (Number - Integer)
     *   `Client Phone (raw)` (Phone number)
     *   `Client Phone (E.164)` (Phone number)
     *   `Preferred Contact Method` (Single select: SMS, Email, Phone Call)
+    *   `twilio-number` (Phone number)
 *   **Description**: Manages client information and their connections to sitters.
 
 ### 3. Number Inventory
-*   **Primary Field**: `PhoneNumber` (Phone number)
+*   **Primary Field**: `phone-number` (Phone number)
 *   **Fields**:
     *   `Assigned Sitter` (Linked to [Sitters])
     *   `Status` (Single select: Available, Assigned, Standby Reserved, Reserved Active, Pending, Ready, Failed)
