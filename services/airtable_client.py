@@ -167,6 +167,24 @@ def update_client_session(client_id: str, session_sid: str, sitter_id: str = Non
         
     clients_table.update(client_id, update_fields)
 
+def update_client_last_active(client_id: str):
+    """
+    Updates only the Last Active timestamp for a client.
+    
+    This should be called on every message to track client activity and
+    reset the deallocation timer.
+    
+    Args:
+        client_id (str): The Client's Airtable Record ID.
+    """
+    try:
+        clients_table.update(client_id, {
+            "Last Active": datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        from utils.logger import log_error
+        log_error(f"Failed to update Last Active for client {client_id}: {str(e)}")
+
 def save_message(session_sid: str, from_number: str, to_number: str, body: str, intercepted: bool = False):
     """
     Logs a message to the Messages table.

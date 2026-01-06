@@ -29,11 +29,13 @@ from services.airtable_client import (
     increment_client_error_count,
     save_message,
     update_message_status,
-    log_event
+    log_event,
+    update_client_last_active
 )
 from services.twilio_proxy import send_sms
 from utils.logger import log_info, log_error
 from utils.request_parser import parse_incoming_payload
+from utils.formatters import format_display_name
 
 router = APIRouter()
 
@@ -71,6 +73,9 @@ async def intercept(request: Request):
         if client_recipient:
             client_real_phone = client_recipient["fields"].get("phone-number")
             log_info(f"Found linked Client: {client_recipient['fields'].get('Name')} ({client_real_phone})")
+            
+            # Update Last Active for outbound messages (Sitter -> Client)
+            update_client_last_active(client_recipient["id"])
             
             try:
                 # Save message for audit (Outbound Sitter->Client)
@@ -172,10 +177,14 @@ async def intercept(request: Request):
         # Use Sitter Name for linking, not Record ID
         update_client_linked_sitter(client_id, sitter_name)
         
+        # Update Last Active for inbound messages (Client -> Sitter)
+        update_client_last_active(client_id)
+        
         # 2d. Forward Message with Prefix (requested by user)
         # Only prepend prefix if this is the first message (new number assignment)
         if is_new_assignment:
-            prefix = f"From {client_name} : "
+            display_name = format_display_name(client_name)
+            prefix = f"From {display_name} : "
             if not Body.lstrip().startswith(prefix):
                 modified_body = f"{prefix}{Body}"
             else:
