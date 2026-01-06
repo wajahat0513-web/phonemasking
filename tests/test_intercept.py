@@ -140,7 +140,7 @@ async def test_assignment_updates_timestamp(mock_find_sitter, mock_find_client, 
     mock_assign_num.return_value = True
     
     # Mock client creation
-    mock_upsert.return_value = ({"id": "recNewClient", "fields": {"Name": "New Client"}}, True)
+    mock_upsert.return_value = ({"id": "recNewClient", "fields": {"Name": "John"}}, True)
 
     payload = {"From": "+1new_client", "To": "+1sitter_twilio", "Body": "First message"}
     await intercept(MockRequest(payload))
@@ -150,7 +150,7 @@ async def test_assignment_updates_timestamp(mock_find_sitter, mock_find_client, 
     
     # Verify suffix was appended for new assignment
     _, kwargs = mock_send_sms.call_args
-    assert "From New Client :" in kwargs['body']
+    assert "From John :" in kwargs['body']
     print("SUCCESS: New client assignment triggered and suffix verified.")
 
 async def run_all():
